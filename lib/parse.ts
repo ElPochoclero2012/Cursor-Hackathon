@@ -1,3 +1,4 @@
+import { groqKey } from "./groq-key";
 import type { MovementType } from "./stock";
 
 export type Catalog = {
@@ -234,7 +235,7 @@ export async function parseWithGroq(
   text: string,
   catalog: Catalog,
 ): Promise<ParsedMovement | { error: string } | null> {
-  const key = process.env.GROQ_API_KEY;
+  const key = groqKey();
   if (!key) return null;
 
   const locList = catalog.locations.map((l) => `${l.id} (${l.name})`).join(", ");
@@ -320,5 +321,5 @@ export async function parseMovement(text: string, catalog: Catalog) {
 }
 
 export function groqEnabled() {
-  return Boolean(process.env.GROQ_API_KEY);
+  return Boolean(groqKey());
 }
