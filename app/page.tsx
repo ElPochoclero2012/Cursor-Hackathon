@@ -400,13 +400,9 @@ export default function Page() {
         {tab === "movimientos" && (
           <>
             <div className="grid-2">
+              <div className="col-stack">
               <section className="card">
                 <h2>Registrar movimiento</h2>
-                <p className="hint">
-                  {groq
-                    ? "Interpretar usa Groq. Micrófono: clic para grabar, hablá, clic otra vez para transcribir (Whisper, no el dictado de Chrome)."
-                    : "Sin GROQ_API_KEY no hay IA ni micrófono. Clave en .env.local y reiniciá npm run dev."}{" "}
-                </p>
                 <label htmlFor="frase">Voz o texto</label>
                 <textarea
                   id="frase"
@@ -428,6 +424,9 @@ export default function Page() {
                   </button>
                   <button type="button" className="btn-primary" onClick={parse} disabled={busy || !text.trim()}>
                     Interpretar
+                  </button>
+                  <button type="button" className="btn-secondary" disabled>
+                    Importar Excel
                   </button>
                 </div>
                 {draft && (
@@ -463,6 +462,8 @@ export default function Page() {
                 )}
                 {msg && tab === "movimientos" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
               </section>
+              <History movements={movements} />
+              </div>
 
               <section className="card">
                 <h2>Stock actual</h2>
@@ -473,7 +474,6 @@ export default function Page() {
                 <StockTable stock={stock} rows={rows} />
               </section>
             </div>
-            <History movements={movements} />
           </>
         )}
 
@@ -780,8 +780,11 @@ function StockTable({
 
 function History({ movements }: { movements: Movement[] }) {
   return (
-    <section className="card">
-      <h2>Últimos movimientos</h2>
+    <section className="card history-panel">
+      <div className="history-head">
+        <h2>Últimos movimientos</h2>
+        <span className="count-chip">{movements.length}</span>
+      </div>
       {movements.length === 0 ? (
         <p className="empty">El stock inicial viene del seed. Los movimientos nuevos aparecen acá.</p>
       ) : (

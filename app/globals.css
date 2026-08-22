@@ -76,6 +76,12 @@ html, body {
   grid-template-columns: 1fr 1fr;
 }
 
+.col-stack {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
 @media (max-width: 900px) {
   .grid-2 { grid-template-columns: 1fr; }
   .app-header { flex-direction: column; align-items: flex-start; }
@@ -161,6 +167,7 @@ button {
   color: var(--navy);
   border: 1px solid var(--line);
 }
+.btn-secondary:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .btn-danger {
   background: #fff;
@@ -252,6 +259,54 @@ tbody tr:hover { background: #f7fafc; }
   border-bottom: 1px solid var(--line);
   font-size: 0.9rem;
 }
+
+.history-panel {
+  border-left: 4px solid var(--navy);
+  background: #f8fbfd;
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-head h2 { margin: 0; }
+
+.count-chip {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--navy);
+  background: #e7f0f8;
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.history-panel .history {
+  max-height: 320px;
+  overflow: auto;
+}
+
+.history-panel .history li {
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.history-panel .when {
+  grid-column: 2;
+  justify-self: start;
+}
+
+.history-panel .empty { padding: 8px 0 4px; }
 
 .pill {
   display: inline-block;
