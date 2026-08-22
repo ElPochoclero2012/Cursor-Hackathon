@@ -27,15 +27,20 @@ Login gratis, proyecto Hobby, **no** hace falta tarjeta para el plan hobby típi
 
 O desde https://vercel.com → Add New → importá el GitHub.
 
-En **Settings → Environment Variables** (Production y Preview):
+Redeploy. La URL queda `https://….vercel.app`.
+
+Variables:
 
 ```
 TURSO_DATABASE_URL=libsql://....
 TURSO_AUTH_TOKEN=...
+GROQ_API_KEY=gsk_...
 ```
 
-Redeploy. La URL queda `https://….vercel.app`.
+## Interpretar texto (Groq)
+
+Guía completa: [GROQ.md](GROQ.md). Resumen: cuenta en console.groq.com → `GROQ_API_KEY` en `.env.local` y en Vercel → reiniciar `npm run dev` / Redeploy.
 
 ## Parseo
 
-Reglas locales en `lib/parse.ts`. Sin API paga.
+Reglas locales en `lib/parse.ts` si no hay Groq. Con `GROQ_API_KEY`, Llama interpreta dictado con errores.
