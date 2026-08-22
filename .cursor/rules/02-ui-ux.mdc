@@ -1,0 +1,50 @@
+---
+description: Estándares de UI/UX para vistas PHP, HTML, formularios, tablas, paneles, modales y dashboards. Usar al crear o modificar cualquier interfaz para que se vea profesional y no improvisada.
+alwaysApply: false
+---
+# Reglas de UI/UX
+
+Una funcionalidad no está terminada si la interfaz se ve improvisada o difícil de usar.
+
+Antes de crear o modificar cualquier vista PHP, HTML, formulario, tabla, panel, modal o dashboard:
+
+1. Reutilizar los componentes visuales existentes antes de crear otros nuevos.
+2. Priorizar la consistencia visual por encima de la creatividad.
+3. Toda pantalla debe parecer diseñada intencionalmente, no simplemente funcional.
+4. Mantener espacios adecuados entre elementos. Una interfaz saturada es un problema de diseño.
+5. Respetar alineaciones consistentes en toda la pantalla.
+6. Los formularios deben ser fáciles de leer y completar.
+7. Las tablas deben priorizar la legibilidad antes que mostrar la mayor cantidad posible de datos.
+8. Las acciones principales deben destacarse claramente.
+9. Las acciones destructivas (eliminar, cancelar, borrar) deben diferenciarse visualmente.
+10. Toda interfaz debe adaptarse correctamente a dispositivos móviles, salvo que se indique lo contrario.
+
+## Cuando existan varias soluciones técnicamente válidas
+
+- Elegir la más clara para el usuario.
+- Elegir la más agradable visualmente.
+- Elegir la que requiera menos esfuerzo mental para comprender.
+- Elegir la que transmita mayor sensación de producto profesional.
+
+## Estándares visuales
+
+- Espaciado consistente entre secciones.
+- Bordes redondeados uniformes.
+- Jerarquía tipográfica clara.
+- Títulos visibles para cada sección.
+- Uso de tarjetas (cards) para agrupar contenido relacionado.
+- Sombras sutiles antes que bordes pesados.
+- Formularios modernos y visualmente limpios.
+- Estados vacíos informativos.
+- Mensajes claros de éxito, error y carga.
+
+## Nunca generar
+
+- Tablas pegadas a los bordes de la pantalla.
+- Formularios desalineados.
+- Estilos inline innecesarios.
+- Botones iguales para acciones diferentes.
+- Pantallas que parezcan una exportación directa de una base de datos.
+- Las pantallas administrativas deben parecer un sistema comercial profesional (tipo Tango, Bejerman o SAP Business One) y no una herramienta interna de desarrollo.
+
+ponytail: Asumir que cada pantalla será utilizada durante horas por personal administrativo. Optimizar siempre para comodidad visual, rapidez de uso y claridad antes que para mostrar la mayor cantidad de información posible.
