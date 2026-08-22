@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+type Tab = "movimientos" | "control" | "exportacion";
+
 type StockPayload = {
   locations: { id: string; name: string }[];
   rows: {
@@ -44,14 +46,47 @@ type CountRow = {
   created_at: string;
 };
 
+type ProformaDoc = {
+  body: string;
+  today: string;
+  buyer: string;
+  country: string;
+  from: string;
+  variety: string;
+  lot: string;
+  bags: number;
+  kg: number | null;
+  trace: {
+    campo?: string;
+    categoria?: string;
+    calibre?: string;
+    bolsa?: string;
+    hilo?: string;
+  };
+};
+
+type ProformaRow = {
+  id: number;
+  lot_code: string;
+  bags: number;
+  buyer: string;
+  dest_country: string;
+  created_at: string;
+};
+
 const TYPE_LABEL: Record<string, string> = {
   transferencia: "Transferencia",
   ingreso: "Ingreso",
   egreso: "Egreso",
 };
 
+const DEMO_PHRASES = [
+  "Pasá 80 bolsas del lote 241 Agata de Dos Pancani al galpón.",
+  "Retirá 600 bolsas del lote 241 de Pancani.",
+];
+
 export default function Page() {
-  const [tab, setTab] = useState<"n01" | "n02" | "n03">("n01");
+  const [tab, setTab] = useState<Tab>("movimientos");
   const [stock, setStock] = useState<StockPayload | null>(null);
   const [movements, setMovements] = useState<Movement[]>([]);
   const [counts, setCounts] = useState<CountRow[]>([]);
@@ -76,7 +111,8 @@ export default function Page() {
   const [docBags, setDocBags] = useState("200");
   const [buyer, setBuyer] = useState("Parmentier");
   const [country, setCountry] = useState("Brasil");
-  const [doc, setDoc] = useState<string | null>(null);
+  const [doc, setDoc] = useState<ProformaDoc | null>(null);
+  const [proformas, setProformas] = useState<ProformaRow[]>([]);
 
   const load = useCallback(async () => {
     const [s, m, c, k, p] = await Promise.all([
@@ -95,9 +131,18 @@ export default function Page() {
     setNames(map);
   }, []);
 
+  const loadProformas = useCallback(async () => {
+    const list = await fetch("/api/proforma").then((r) => r.json());
+    setProformas(Array.isArray(list) ? list : []);
+  }, []);
+
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (tab === "exportacion") loadProformas();
+  }, [tab, loadProformas]);
 
   const bodegas = useMemo(
     () => (stock?.locations ?? []).map((l) => ({ id: l.id, name: l.name })),
@@ -309,8 +354,9 @@ export default function Page() {
         setMsg({ kind: "error", text: data.error || "No se armó la proforma." });
         return;
       }
-      setDoc(data.body);
+      setDoc(data);
       setMsg({ kind: "ok", text: "Proforma armada con trazabilidad del lote." });
+      await loadProformas();
     } finally {
       setBusy(false);
     }
@@ -321,23 +367,31 @@ export default function Page() {
       <header className="app-header">
         <div>
           <h1>Stock de semilla</h1>
-          <p>Campaña 2026 · N01 movimientos · N02 control · N03 documentación</p>
+          <p>Campaña 2026 · una fuente de verdad por lote y ubicación</p>
         </div>
-        <nav className="tabs" aria-label="Niveles">
-          <button type="button" className={tab === "n01" ? "on" : ""} onClick={() => setTab("n01")}>
-            N01 Movimientos
-          </button>
-          <button type="button" className={tab === "n02" ? "on" : ""} onClick={() => setTab("n02")}>
-            N02 Control
-          </button>
-          <button type="button" className={tab === "n03" ? "on" : ""} onClick={() => setTab("n03")}>
-            N03 Exportación
-          </button>
+        <nav className="tabs" aria-label="Módulos">
+          {(
+            [
+              ["movimientos", "Movimientos"],
+              ["control", "Control"],
+              ["exportacion", "Exportación"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={tab === id ? "on" : ""}
+              aria-current={tab === id ? "page" : undefined}
+              onClick={() => setTab(id)}
+            >
+              {label}
+            </button>
+          ))}
         </nav>
       </header>
 
       <main className="wrap">
-        {tab === "n01" && (
+        {tab === "movimientos" && (
           <>
             <div className="grid-2">
               <section className="card">
@@ -357,6 +411,13 @@ export default function Page() {
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Dictá o escribí el movimiento…"
                 />
+                <div className="chips" aria-label="Frases de ejemplo">
+                  {DEMO_PHRASES.map((p) => (
+                    <button key={p} type="button" className="chip" onClick={() => setText(p)}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
                 <div className="row-actions">
                   <button type="button" className="btn-secondary" onClick={() => dictate(setText)}>
                     {listening ? "Cortar micrófono" : "Micrófono"}
@@ -396,7 +457,7 @@ export default function Page() {
                     </div>
                   </div>
                 )}
-                {msg && tab === "n01" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
+                {msg && tab === "movimientos" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
               </section>
 
               <section className="card">
@@ -412,60 +473,62 @@ export default function Page() {
           </>
         )}
 
-        {tab === "n02" && (
+        {tab === "control" && (
           <>
-            <section className="card">
-              <h2>Conteo físico vs declarado</h2>
-              <p className="hint">
-                Si no coincide, el sistema propone la causa más probable. La orden de carga no sale si no hay
-                bolsas verificables.
-              </p>
-              <div className="fields">
-                <div>
-                  <label htmlFor="clot">Lote</label>
-                  <select id="clot" value={countLot} onChange={(e) => setCountLot(e.target.value)}>
-                    {lotCodes.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+            <div className="grid-2 even">
+              <section className="card">
+                <h2>Conteo físico vs declarado</h2>
+                <p className="hint">Si no coincide, el sistema propone la causa más probable.</p>
+                <div className="fields">
+                  <div>
+                    <label htmlFor="clot">Lote</label>
+                    <select id="clot" value={countLot} onChange={(e) => setCountLot(e.target.value)}>
+                      {lotCodes.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="cloc">Ubicación</label>
+                    <select id="cloc" value={countLoc} onChange={(e) => setCountLoc(e.target.value)}>
+                      {bodegas.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="cbags">Bolsas contadas</label>
+                    <input id="cbags" value={countBags} onChange={(e) => setCountBags(e.target.value)} />
+                  </div>
                 </div>
-                <div>
-                  <label htmlFor="cloc">Ubicación</label>
-                  <select id="cloc" value={countLoc} onChange={(e) => setCountLoc(e.target.value)}>
-                    {bodegas.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="row-actions">
+                  <button type="button" className="btn-primary" onClick={doCount} disabled={busy}>
+                    Registrar conteo
+                  </button>
                 </div>
-                <div>
-                  <label htmlFor="cbags">Bolsas contadas</label>
-                  <input id="cbags" value={countBags} onChange={(e) => setCountBags(e.target.value)} />
-                </div>
-              </div>
-              <div className="row-actions">
-                <button type="button" className="btn-primary" onClick={doCount} disabled={busy}>
-                  Registrar conteo
-                </button>
-              </div>
-              {hypo && <p className="hypo">{hypo}</p>}
-              {msg && tab === "n02" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
-            </section>
+                {hypo && <p className="hypo">{hypo}</p>}
+                {msg && tab === "control" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
+              </section>
 
-            <section className="card">
-              <h2>Orden de carga</h2>
-              <p className="hint">Usa el mínimo entre stock del sistema y el último conteo de ese lote y lugar.</p>
-              <label htmlFor="lbags">Bolsas a cargar (mismo lote y origen de arriba)</label>
-              <input id="lbags" value={loadBags} onChange={(e) => setLoadBags(e.target.value)} />
-              <div className="row-actions">
-                <button type="button" className="btn-ok" onClick={doCarga} disabled={busy}>
-                  Emitir orden de carga
-                </button>
-              </div>
-            </section>
+              <section className="card">
+                <h2>Orden de carga</h2>
+                <p className="hint">
+                  Mismo lote y ubicación del conteo. Usa el mínimo entre el sistema y el último conteo. No sale si no
+                  hay bolsas verificables.
+                </p>
+                <label htmlFor="lbags">Bolsas a cargar</label>
+                <input id="lbags" value={loadBags} onChange={(e) => setLoadBags(e.target.value)} />
+                <div className="row-actions">
+                  <button type="button" className="btn-ok" onClick={doCarga} disabled={busy}>
+                    Emitir orden de carga
+                  </button>
+                </div>
+              </section>
+            </div>
 
             <section className="card">
               <h2>Stock</h2>
@@ -475,86 +538,195 @@ export default function Page() {
             <section className="card">
               <h2>Conteos</h2>
               {counts.length === 0 ? (
-                <p className="empty">Todavía no hay conteos.</p>
+                <p className="empty">Todavía no hay conteos. Registrá el primero para comparar piso vs sistema.</p>
               ) : (
-                <ul className="history">
-                  {counts.map((c) => (
-                    <li key={c.id}>
-                      <span className={`pill ${c.declared_bags === c.counted_bags ? "ingreso" : "egreso"}`}>
-                        {c.declared_bags === c.counted_bags ? "OK" : "Desvío"}
-                      </span>
-                      <span>
-                        Lote {c.lot_code} · {c.location_name}: sistema {c.declared_bags} / contado {c.counted_bags}
-                      </span>
-                      <span className="num when">{new Date(c.created_at).toLocaleString("es-AR")}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Lote</th>
+                        <th>Ubicación</th>
+                        <th>Sistema</th>
+                        <th>Contado</th>
+                        <th>Estado</th>
+                        <th>Fecha</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {counts.map((c) => {
+                        const ok = c.declared_bags === c.counted_bags;
+                        return (
+                          <tr key={c.id}>
+                            <td>
+                              {c.lot_code} {c.variety}
+                            </td>
+                            <td>{c.location_name}</td>
+                            <td className="num">{c.declared_bags}</td>
+                            <td className="num">{c.counted_bags}</td>
+                            <td>
+                              <span className={`pill ${ok ? "ingreso" : "egreso"}`}>{ok ? "OK" : "Desvío"}</span>
+                            </td>
+                            <td className="num when">{new Date(c.created_at).toLocaleString("es-AR")}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </section>
           </>
         )}
 
-        {tab === "n03" && (
-          <section className="card">
-            <h2>Proforma de exportación</h2>
-            <p className="hint">
-              Cruza el lote (variedad, calibre, bolsa/hilo, procedencia) con el stock verificable. Si no hay
-              bolsas, no se emite.
-            </p>
-            <div className="fields">
-              <div>
-                <label htmlFor="dlot">Lote</label>
-                <select id="dlot" value={docLot} onChange={(e) => setDocLot(e.target.value)}>
-                  {lotCodes.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+        {tab === "exportacion" && (
+          <>
+            <section className="card">
+              <h2>Proforma de exportación</h2>
+              <p className="hint">
+                Cruza el lote (variedad, calibre, bolsa/hilo, procedencia) con el stock verificable. Si no hay bolsas, no
+                se emite.
+              </p>
+              <div className="fields fields-export">
+                <div>
+                  <label htmlFor="dlot">Lote</label>
+                  <select id="dlot" value={docLot} onChange={(e) => setDocLot(e.target.value)}>
+                    {lotCodes.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="dloc">Carga desde</label>
+                  <select id="dloc" value={docLoc} onChange={(e) => setDocLoc(e.target.value)}>
+                    {bodegas.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="dbags">Bolsas</label>
+                  <input id="dbags" value={docBags} onChange={(e) => setDocBags(e.target.value)} />
+                </div>
+                <div>
+                  <label htmlFor="buyer">Comprador</label>
+                  <input
+                    id="buyer"
+                    value={buyer}
+                    onChange={(e) => setBuyer(e.target.value)}
+                    className={listening ? "listening" : ""}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="country">País / destino</label>
+                  <input id="country" value={country} onChange={(e) => setCountry(e.target.value)} />
+                </div>
               </div>
-              <div>
-                <label htmlFor="dloc">Carga desde</label>
-                <select id="dloc" value={docLoc} onChange={(e) => setDocLoc(e.target.value)}>
-                  {bodegas.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
+              <div className="row-actions">
+                <button type="button" className="btn-secondary" onClick={() => dictate(setBuyer)}>
+                  {listening ? "Escuchando…" : "Dictar comprador"}
+                </button>
+                <button type="button" className="btn-primary" onClick={doProforma} disabled={busy}>
+                  Armar proforma
+                </button>
               </div>
-              <div>
-                <label htmlFor="dbags">Bolsas</label>
-                <input id="dbags" value={docBags} onChange={(e) => setDocBags(e.target.value)} />
-              </div>
-              <div>
-                <label htmlFor="buyer">Comprador</label>
-                <input
-                  id="buyer"
-                  value={buyer}
-                  onChange={(e) => setBuyer(e.target.value)}
-                  onDoubleClick={() => dictate(setBuyer)}
-                />
-              </div>
-              <div>
-                <label htmlFor="country">País / destino</label>
-                <input id="country" value={country} onChange={(e) => setCountry(e.target.value)} />
-              </div>
-            </div>
-            <div className="row-actions">
-              <button type="button" className="btn-secondary" onClick={() => dictate(setBuyer)}>
-                Dictar comprador
-              </button>
-              <button type="button" className="btn-primary" onClick={doProforma} disabled={busy}>
-                Armar proforma
-              </button>
-            </div>
-            {msg && tab === "n03" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
-            {doc && <pre className="doc">{doc}</pre>}
-          </section>
+              {msg && tab === "exportacion" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
+            </section>
+
+            {doc && <ProformaCard doc={doc} />}
+
+            <section className="card">
+              <h2>Proformas emitidas</h2>
+              {proformas.length === 0 ? (
+                <p className="empty">Todavía no hay proformas. Armá una con stock verificable.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Lote</th>
+                        <th>Comprador</th>
+                        <th>Destino</th>
+                        <th>Bolsas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {proformas.map((p) => (
+                        <tr key={p.id}>
+                          <td className="num when">{new Date(p.created_at).toLocaleString("es-AR")}</td>
+                          <td>{p.lot_code}</td>
+                          <td>{p.buyer}</td>
+                          <td>{p.dest_country}</td>
+                          <td className="num">{p.bags}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </>
         )}
       </main>
     </>
+  );
+}
+
+function ProformaCard({ doc }: { doc: ProformaDoc }) {
+  const tr = doc.trace ?? {};
+  return (
+    <section className="card proforma">
+      <header className="proforma-head">
+        <h2>Proforma / documentación de exportación</h2>
+        <p>Semilla para siembra · {doc.today}</p>
+      </header>
+      <div className="proforma-grid">
+        <div>
+          <h3>Comprador</h3>
+          <dl>
+            <dt>Nombre</dt>
+            <dd>{doc.buyer}</dd>
+            <dt>País / destino</dt>
+            <dd>{doc.country}</dd>
+          </dl>
+        </div>
+        <div>
+          <h3>Carga</h3>
+          <dl>
+            <dt>Lugar</dt>
+            <dd>{doc.from}</dd>
+            <dt>Bolsas</dt>
+            <dd>{doc.bags}</dd>
+            <dt>Kilogramos</dt>
+            <dd>{doc.kg ? `${doc.kg.toLocaleString("es-AR")} (est.)` : "Según pesada"}</dd>
+          </dl>
+        </div>
+        <div>
+          <h3>Lote</h3>
+          <dl>
+            <dt>Variedad</dt>
+            <dd>
+              {doc.variety} · {doc.lot}
+            </dd>
+            <dt>Categoría / calibre</dt>
+            <dd>
+              {tr.categoria || "semilla"} · {tr.calibre || "según planta"}
+            </dd>
+            <dt>Identificación</dt>
+            <dd>
+              bolsa {tr.bolsa || "s/d"} / hilo {tr.hilo || "s/d"}
+            </dd>
+            <dt>Procedencia</dt>
+            <dd>{tr.campo || "Santa Ana"}</dd>
+          </dl>
+        </div>
+      </div>
+      <p className="proforma-foot">Campos cruzados con trazabilidad del lote. Completar DTV / SENASA en destino.</p>
+    </section>
   );
 }
 
@@ -565,7 +737,7 @@ function StockTable({
   stock: StockPayload | null;
   rows: StockPayload["rows"];
 }) {
-  if (!stock) return null;
+  if (!stock) return <p className="empty">Cargando saldos…</p>;
   return (
     <div className="table-wrap">
       <table>
