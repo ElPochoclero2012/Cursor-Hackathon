@@ -13,7 +13,9 @@ No la subas a GitHub ni la pegues en un chat grupal.
 
 ## 2. Que ande en tu PC (`npm run dev`)
 
-En la raíz del proyecto, archivo `.env.local` (junto a `package.json`). Si ya lo tenés por Turso, **agregá** esta línea, no borres las otras:
+En la raíz del proyecto, archivo `.env.local` (junto a `package.json`). Si ya lo tenés por Turso, **agregá** esta línea, no borres las otras.
+
+Sin comillas y **sin punto y coma** (si copiás de un `.env` de JavaScript, Groq responde 401):
 
 ```
 GROQ_API_KEY=gsk_pegá_acá_la_clave

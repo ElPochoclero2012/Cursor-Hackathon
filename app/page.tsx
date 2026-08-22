@@ -98,8 +98,9 @@ export default function Page() {
   const [listening, setListening] = useState(false);
   const [groq, setGroq] = useState(false);
   const wantMic = useRef(false);
-  const recRef = useRef<SpeechRecognition | null>(null);
-  const spokenRef = useRef("");
+  const recRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
   const [countLot, setCountLot] = useState("241");
   const [countLoc, setCountLoc] = useState("dospanca");
@@ -115,19 +116,20 @@ export default function Page() {
   const [proformas, setProformas] = useState<ProformaRow[]>([]);
 
   const load = useCallback(async () => {
+    const json = (url: string) => fetch(url).then((r) => r.json()).catch(() => null);
     const [s, m, c, k, p] = await Promise.all([
-      fetch("/api/stock").then((r) => r.json()),
-      fetch("/api/movements").then((r) => r.json()),
-      fetch("/api/catalog").then((r) => r.json()),
-      fetch("/api/counts").then((r) => r.json()),
-      fetch("/api/parse").then((r) => r.json()),
+      json("/api/stock"),
+      json("/api/movements"),
+      json("/api/catalog"),
+      json("/api/counts"),
+      json("/api/parse"),
     ]);
-    setStock(s);
-    setMovements(m);
-    setCounts(k);
-    setGroq(Boolean(p.groq));
+    if (s && Array.isArray(s.rows) && Array.isArray(s.locations)) setStock(s);
+    if (Array.isArray(m)) setMovements(m);
+    if (Array.isArray(k)) setCounts(k);
+    setGroq(Boolean(p?.groq));
     const map: Record<string, string> = {};
-    for (const loc of c.locations as { id: string; name: string }[]) map[loc.id] = loc.name;
+    for (const loc of (c?.locations ?? []) as { id: string; name: string }[]) map[loc.id] = loc.name;
     setNames(map);
   }, []);
 
@@ -148,7 +150,7 @@ export default function Page() {
     () => (stock?.locations ?? []).map((l) => ({ id: l.id, name: l.name })),
     [stock],
   );
-  const lotCodes = useMemo(() => stock?.rows.map((r) => r.code) ?? ["241", "810"], [stock]);
+  const lotCodes = useMemo(() => stock?.rows?.map((r) => r.code) ?? ["241", "810"], [stock]);
 
   const rows = useMemo(() => {
     if (!stock) return [];
@@ -207,85 +209,89 @@ export default function Page() {
     }
   }
 
+  function stopStream() {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }
+
   function stopDictate() {
     wantMic.current = false;
-    try {
-      recRef.current?.stop();
-    } catch {
-      /* noop */
-    }
+    const rec = recRef.current;
+    if (rec && rec.state !== "inactive") rec.stop();
     recRef.current = null;
+    stopStream();
     setListening(false);
   }
 
-  function dictate(into: (s: string) => void) {
+  async function dictate(into: (s: string) => void) {
     if (listening) {
-      stopDictate();
-      return;
-    }
-    const SR =
-      typeof window !== "undefined" &&
-      ((window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognition }).webkitSpeechRecognition ||
-        (window as unknown as { SpeechRecognition?: new () => SpeechRecognition }).SpeechRecognition);
-    if (!SR) {
-      setMsg({
-        kind: "error",
-        text: "El dictado del navegador pide Chrome o Edge. En el evento: Wispr Flow (ref.wisprflow.ai/cursor) escribe en el recuadro y después Interpretar.",
-      });
+      recRef.current?.stop();
       return;
     }
     if (!window.isSecureContext) {
       setMsg({
         kind: "error",
-        text: "El micrófono solo anda en https o localhost. Usá la URL de Vercel o Chrome en http://localhost:3000.",
+        text: "El micrófono pide https o localhost (Chrome).",
       });
       return;
     }
-    spokenRef.current = "";
-    const rec = new SR();
-    rec.lang = "es-AR";
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.maxAlternatives = 3;
-    recRef.current = rec;
-    wantMic.current = true;
-    rec.onstart = () => setListening(true);
-    rec.onend = () => {
-      if (wantMic.current) {
-        try {
-          rec.start();
-        } catch {
-          setListening(false);
-        }
-      } else {
-        setListening(false);
-      }
-    };
-    rec.onerror = (ev: { error?: string }) => {
-      if (ev.error === "no-speech" || ev.error === "aborted") return;
-      stopDictate();
-      const hint =
-        ev.error === "not-allowed"
-          ? "Chrome bloqueó el micrófono. Permiso del candado → Permitir."
-          : "Dictado inestable. Dejá el texto y usá Interpretar (Groq corrige errores).";
-      setMsg({ kind: "error", text: hint });
-    };
-    rec.onresult = (ev: SpeechRecognitionEvent) => {
-      let interim = "";
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        const t = ev.results[i][0].transcript;
-        if (ev.results[i].isFinal) {
-          spokenRef.current = `${spokenRef.current} ${t}`.trim();
-        } else {
-          interim += t;
-        }
-      }
-      into(`${spokenRef.current} ${interim}`.trim());
-    };
+    if (!groq) {
+      setMsg({
+        kind: "error",
+        text: "El dictado usa Groq Whisper. Poné GROQ_API_KEY en .env.local, reiniciá npm run dev, y en Vercel Redeploy.",
+      });
+      return;
+    }
+    setMsg(null);
     try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : "";
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      recRef.current = rec;
+      chunksRef.current = [];
+      wantMic.current = true;
+      rec.ondataavailable = (ev) => {
+        if (ev.data.size > 0) chunksRef.current.push(ev.data);
+      };
+      rec.onstop = async () => {
+        stopStream();
+        setListening(false);
+        recRef.current = null;
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        chunksRef.current = [];
+        if (blob.size < 64) {
+          setMsg({ kind: "error", text: "Grabación vacía. Clic en Micrófono, hablá 2–3 s, clic otra vez para cortar." });
+          return;
+        }
+        setBusy(true);
+        try {
+          const fd = new FormData();
+          fd.append("audio", blob, "dictado.webm");
+          const res = await fetch("/api/transcribe", { method: "POST", body: fd });
+          const data = await res.json();
+          if (!res.ok) {
+            setMsg({ kind: "error", text: data.error || "No se pudo transcribir." });
+            return;
+          }
+          into(String(data.text || "").trim());
+        } finally {
+          setBusy(false);
+          wantMic.current = false;
+        }
+      };
       rec.start();
+      setListening(true);
     } catch {
-      setMsg({ kind: "error", text: "No se pudo iniciar el micrófono. Probá de nuevo en Chrome." });
+      stopDictate();
+      setMsg({
+        kind: "error",
+        text: "Chrome bloqueó el micrófono. Candado de la URL → Permitir.",
+      });
     }
   }
 
@@ -398,10 +404,8 @@ export default function Page() {
                 <h2>Registrar movimiento</h2>
                 <p className="hint">
                   {groq
-                    ? "Interpretar usa Groq (gratis) y aguanta dictado sucio: pancani, ochenta, ágata."
-                    : "Sin GROQ_API_KEY el parseo es por reglas. Cargá la clave en Vercel para corregir error humano."}{" "}
-                  Micrófono: Chrome/Edge, https. Clic otra vez para cortar. Si se cae, dictá con Wispr Flow del
-                  hackathon y pegá acá.
+                    ? "Interpretar usa Groq. Micrófono: clic para grabar, hablá, clic otra vez para transcribir (Whisper, no el dictado de Chrome)."
+                    : "Sin GROQ_API_KEY no hay IA ni micrófono. Clave en .env.local y reiniciá npm run dev."}{" "}
                 </p>
                 <label htmlFor="frase">Voz o texto</label>
                 <textarea
@@ -420,7 +424,7 @@ export default function Page() {
                 </div>
                 <div className="row-actions">
                   <button type="button" className="btn-secondary" onClick={() => dictate(setText)}>
-                    {listening ? "Cortar micrófono" : "Micrófono"}
+                    {listening ? "Cortar y transcribir" : "Micrófono"}
                   </button>
                   <button type="button" className="btn-primary" onClick={parse} disabled={busy || !text.trim()}>
                     Interpretar
@@ -801,20 +805,3 @@ function History({ movements }: { movements: Movement[] }) {
   );
 }
 
-type SpeechRecognition = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  maxAlternatives: number;
-  onstart: () => void;
-  onend: () => void;
-  onerror: (ev: { error?: string }) => void;
-  onresult: (ev: SpeechRecognitionEvent) => void;
-  start: () => void;
-  stop: () => void;
-};
-
-type SpeechRecognitionEvent = {
-  resultIndex: number;
-  results: Array<{ isFinal: boolean; 0: { transcript: string } }>;
-};
