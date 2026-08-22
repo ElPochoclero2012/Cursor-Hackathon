@@ -399,7 +399,7 @@ export default function Page() {
 
       <main className="wrap">
         {tab === "movimientos" && (
-          <>
+          <div className="pane-floor">
             <div className="grid-2">
               <div className="col-stack">
               <section className="card">
@@ -476,11 +476,11 @@ export default function Page() {
                 <StockTable stock={stock} rows={rows} />
               </section>
             </div>
-          </>
+          </div>
         )}
 
         {tab === "control" && (
-          <>
+          <div className="pane-floor">
             <div className="grid-2 even">
               <section className="card">
                 <h2>Conteo físico vs declarado</h2>
@@ -582,7 +582,7 @@ export default function Page() {
                 </div>
               )}
             </section>
-          </>
+          </div>
         )}
 
         {tab === "exportacion" && (

@@ -82,6 +82,12 @@ html, body {
   min-width: 0;
 }
 
+.pane-floor {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
 @media (max-width: 900px) {
   .grid-2 { grid-template-columns: 1fr; }
   .app-header { flex-direction: column; align-items: flex-start; }
@@ -89,6 +95,98 @@ html, body {
 }
 
 @media (max-width: 700px) {
+  .app-header {
+    padding: 14px 14px 12px;
+    gap: 12px;
+  }
+  .app-header h1 { font-size: 1.15rem; }
+  .app-header p { display: none; }
+  .tabs {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .tabs button {
+    width: 100%;
+    padding: 10px 4px;
+    font-size: 0.78rem;
+  }
+
+  .wrap {
+    padding: 12px 12px 28px;
+    gap: 12px;
+  }
+  .pane-floor,
+  .col-stack { gap: 12px; }
+
+  .pane-floor .card {
+    padding: 14px 12px 12px;
+    border-radius: 8px;
+  }
+
+  .pane-floor textarea,
+  .pane-floor input,
+  .pane-floor select {
+    font-size: 16px;
+    padding: 11px 12px;
+  }
+  .pane-floor textarea { min-height: 76px; }
+
+  .pane-floor .fields {
+    grid-template-columns: 1fr;
+  }
+
+  .pane-floor .row-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .pane-floor .row-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .pane-floor .preview dl {
+    display: grid;
+    grid-template-columns: 88px 1fr;
+    gap: 6px 10px;
+    margin: 8px 0 0;
+  }
+  .pane-floor .preview dt { margin-top: 0; }
+
+  .pane-floor .history-panel .history { max-height: 220px; }
+  .pane-floor .history-panel .history li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .pane-floor .history-panel .when { grid-column: 1; }
+
+  .pane-floor .chip {
+    padding: 10px 12px;
+  }
+
+  .pane-floor .table-wrap {
+    -webkit-overflow-scrolling: touch;
+  }
+  .pane-floor table {
+    font-size: 0.8rem;
+    min-width: 560px;
+  }
+  .pane-floor th,
+  .pane-floor td {
+    padding: 8px;
+    white-space: nowrap;
+  }
+  .pane-floor thead th:first-child,
+  .pane-floor tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    box-shadow: 4px 0 8px rgba(18, 52, 77, 0.06);
+  }
+  .pane-floor tbody td:first-child { background: var(--card); }
+  .pane-floor tbody tr:hover td:first-child { background: #f7fafc; }
+
   .history li {
     grid-template-columns: 1fr;
     gap: 4px;
