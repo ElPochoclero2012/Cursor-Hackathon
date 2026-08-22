@@ -1,6 +1,6 @@
 ---
 name: Sistema stock N01
-overview: "Implementar un MVP de stock único a partir de la planilla real (movimientos, no inventario): 4 ubicaciones, lotes/variedades del Excel, carga por texto/voz, y validación de disponibilidad antes de mover."
+overview: "MVP de stock único desde la planilla real, listo para crecer: carga voz/texto, validación de saldo, docs de funcionamiento y speech de presentación."
 todos:
   - id: schema-seed
     content: "SQLite: locations, lots, stock, movements + seed.json (4 bodegas, lotes reales, saldos de demo)"
@@ -14,8 +14,11 @@ todos:
   - id: nlp-voice
     content: Parseo LLM/regex con alias de la planilla + Web Speech + confirmación antes de aplicar
     status: pending
+  - id: docs-speech
+    content: "README + docs/COMO_FUNCIONA.md + docs/ESCALA.md + docs/SPEECH.md (2-3 min) y ensayar"
+    status: pending
   - id: cleanup-demo
-    content: Borrar dumps _xls_*.txt y ensayar guion con lotes 241/810/300
+    content: Borrar dumps _xls_*.txt y ensayar demo con lotes 241/810/300
     status: pending
 isProject: false
 ---
@@ -96,6 +99,22 @@ Reconstruir saldos reales sumando todas las hojas es frágil (filas vacías, des
 
 Archivo estático `data/seed.json` (no parsear el .xls en cada arranque). Extraer a mano/script una vez.
 
+## Preparado para escalar (sin construir el futuro ahora)
+
+El Excel ya muestra lo que viene: más frigoríficos (`sasula`), clientes, DTV, calibres, kg vs bolsas, colores de bolsa. El MVP no implementa eso; deja **costuras** para no reescribir el núcleo.
+
+**Reglas de diseño:**
+
+- **Ubicaciones y lotes son datos** (`locations`, `lots`, alias en `data/aliases.json` o columnas). Sumar un quinto frío = fila + alias, no columna hardcodeada en la UI (la tabla de stock se arma recorriendo ubicaciones `kind = bodega`).
+- **Un motor de movimientos**, no un módulo por hoja. Las hojas del Excel son *orígenes históricos* de `ingreso | transferencia | egreso`. Un tipo nuevo (ajuste de inventario) es otro valor del enum + la misma transacción.
+- **`movements` append-only** = fuente de verdad. `stock` es saldos derivados aplicados en la misma transacción. Así después se puede reconstruir, auditar o importar el .xls sin pelearse con “editar la celda”.
+- **Parser detrás de una sola función** `parseMovement(text, catalog) → Draft`. Hoy: LLM, si no hay clave: reglas. Mañana: otro modelo, sin tocar `applyMovement`.
+- **Campos extra en `notes` (texto) o JSON opcional** en el movimiento (`remito`, DTV, transporte) para no inflar el schema el día 1; documentar en ESCALA cuándo merecen columna.
+- **Archivos pocos y con dueño:** `lib/db.ts`, `lib/stock.ts` (aplicar movimiento), `lib/parse.ts`, `lib/catalog.ts`. La UI no calcula saldos.
+- **No hacer ahora:** microservicios, auth, event bus, hexagonal de 12 carpetas, Postgres “por si acaso”. SQLite alcanza; el contrato de `applyMovement` es lo que se conserva si cambia el motor.
+
+Comentarios `ponytail:` solo en atajos reales (p. ej. saldo denormalizado, parser regex incompleto).
+
 ## App (un solo proceso)
 
 Next.js (App Router) + SQLite (`better-sqlite3`) + una pantalla con look de sistema de gestión (regla de UI del repo: claro, tarjetas, tabla legible, no “export de DB”).
@@ -123,7 +142,32 @@ Voz: Web Speech API del navegador → mismo textarea. Frases de backup en un blo
 2. `POST /api/movements` con transacción y chequeo de saldo (formulario mínimo oculto o de respaldo).
 3. Parseo NL + confirmación.
 4. Micrófono.
-5. Guión de 2–3 min: vista única → transferencia OK → egreso/transferencia rechazada por falta de stock.
+5. Documentación + speech (abajo).
+6. Ensayo de 2–3 min: vista única → transferencia OK → egreso rechazado por falta de stock.
+
+## Documentación (entregable del repo)
+
+Tres archivos cortos, en español, para el equipo y para el jurado si preguntan “¿cómo sigue?”:
+
+- [README.md](README.md) — qué es, cómo levantar (`npm install`, `npm run dev`, variable de API opcional), frases de demo.
+- [docs/COMO_FUNCIONA.md](docs/COMO_FUNCIONA.md) — problema de la planilla; modelo (ubicaciones, lotes, saldo, movimientos); flujo voz/texto → parse → confirmar → transacción; qué valida y qué rechaza; mapa “hoja del Excel → tipo de movimiento”.
+- [docs/ESCALA.md](docs/ESCALA.md) — backlog explícito y **dónde se enchufa**: 5ª ubicación, clientes, importar remitos, kg como unidad, usuarios, STT aparte. Una línea por ítem: *qué archivo tocar*, no un diseño de 20 páginas.
+
+Sin wiki, sin JSDoc masivo. Si un módulo tiene un atajo, el comentario `ponytail:` + una viñeta en ESCALA.
+
+## Speech de presentación
+
+Archivo [docs/SPEECH.md](docs/SPEECH.md): texto para leer en voz alta, **2–3 minutos**, con marcas de tiempo y qué mostrar en pantalla. Incluir variante de 60 s si cortan.
+
+Estructura fija:
+
+1. **Problema (20 s)** — cuatro depósitos, ~150 lotes, planilla compartida, el faltante aparece en la entrega.
+2. **Qué reemplaza (20 s)** — una sola vista de bolsas por lote y ubicación (mostrar tabla).
+3. **IA con oficio (40 s)** — dictar/pegar: “Pasá 80 bolsas del lote 241 Agata de Dos Pancani al galpón.” Se ve el parseo; confirmar; saldos cambian.
+4. **La regla que Excel no tenía (40 s)** — intentar un retiro/entrega de más; el sistema bloquea con el saldo real. “Eso es lo que hoy se descubre con el cliente esperando.”
+5. **Cierre y escala (20 s)** — carga en el lenguaje del operario; listo para más frigoríficos y clientes sin rehacer el motor de movimientos.
+
+Ensayar 5 veces. Frases de backup copiadas. Si el micrófono falla, el speech sigue con texto.
 
 ## Demo (usar lenguaje de la planilla)
 
