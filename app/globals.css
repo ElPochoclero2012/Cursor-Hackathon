@@ -72,9 +72,21 @@ html, body {
   align-items: start;
 }
 
+.grid-2.even {
+  grid-template-columns: 1fr 1fr;
+}
+
 @media (max-width: 900px) {
   .grid-2 { grid-template-columns: 1fr; }
   .app-header { flex-direction: column; align-items: flex-start; }
+  .proforma-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  .history li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
 }
 
 .card {
@@ -279,20 +291,97 @@ tbody tr:hover { background: #f7fafc; }
   color: var(--navy);
 }
 
-.fields {
-  display: grid;
-  gap: 10px;
+.tabs button:not(.on) {
+  opacity: 0.85;
 }
 
-.doc {
-  white-space: pre-wrap;
-  font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.85rem;
-  background: #f6f9fb;
+.tabs button:not(.on):hover {
+  background: #256086;
+  color: #fff;
+}
+
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px 14px;
+}
+
+.fields-export {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.chips {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.chip {
+  text-align: left;
+  font-weight: 500;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  padding: 8px 10px;
+  background: #f4f7f9;
+  color: var(--navy);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px;
-  margin: 12px 0 0;
+}
+
+.chip:hover { background: #e8eef3; }
+
+.proforma {
+  padding-bottom: 18px;
+}
+
+.proforma-head {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+
+.proforma-head h2 { margin: 0; }
+
+.proforma-head p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.proforma-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.proforma-grid h3 {
+  margin: 0 0 8px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.proforma-grid dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+}
+
+.proforma-grid dd {
+  margin: 2px 0 0;
+  font-weight: 650;
+}
+
+.proforma-foot {
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .hypo {
