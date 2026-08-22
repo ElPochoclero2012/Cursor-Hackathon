@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { FRASES_B } from "../lib/b-debug.ts";
 import { explainGap } from "../lib/hypothesis.ts";
 import { parseCount, parseWithRules, looksLikeCount } from "../lib/parse.ts";
 
@@ -6,10 +7,12 @@ const catalog = {
   locations: [
     { id: "dospanca", name: "Frigorífico Dos Pancani", kind: "bodega" },
     { id: "galpon", name: "Galpón", kind: "bodega" },
+    { id: "belmonte", name: "Frigorífico Belmonte", kind: "bodega" },
     { id: "campo", name: "Campo", kind: "origen" },
   ],
   lots: [
     { code: "241", variety: "Agata" },
+    { code: "700", variety: "7 Four 7" },
     { code: "810", variety: "Asterix" },
   ],
   aliases: {
@@ -18,13 +21,11 @@ const catalog = {
     dospanca: "dospanca",
     galpon: "galpon",
     "el galpon": "galpon",
+    belmonte: "belmonte",
   },
 };
 
-const move = parseWithRules(
-  "mandá ochenta bolsas del lote doscientos cuarenta y uno de pancani al gal pon",
-  catalog,
-);
+const move = parseWithRules(FRASES_B[0].texto, catalog);
 assert.ok(!("error" in move));
 assert.equal(move.lote, "241");
 assert.equal(move.bolsas, 80);
@@ -36,8 +37,30 @@ const carga = parseWithRules("despachá 50 bolsas del lote 241 de pancani", cata
 assert.ok(!("error" in carga));
 assert.equal(carga.type, "egreso");
 
-assert.equal(looksLikeCount("Conté 320 bolsas del lote 241 en pancani"), true);
-const count = parseCount("Conté 320 bolsas del lote 241 en pancani", catalog);
+const sacaron = parseWithRules(
+  "sacaron 150 bolsas del galpon del lote 700 7 four 7 y las mandaron a Belmonte",
+  catalog,
+);
+assert.ok(!("error" in sacaron));
+assert.equal(sacaron.type, "transferencia");
+assert.equal(sacaron.lote, "700");
+assert.equal(sacaron.bolsas, 150);
+assert.equal(sacaron.origen, "galpon");
+assert.equal(sacaron.destino, "belmonte");
+
+const ingreso = parseWithRules(
+  "llegaron 500 bolsas nuevas al lote 700 7 four 7 a belmonte",
+  catalog,
+);
+assert.ok(!("error" in ingreso));
+assert.equal(ingreso.type, "ingreso");
+assert.equal(ingreso.lote, "700");
+assert.equal(ingreso.bolsas, 500);
+assert.equal(ingreso.origen, "campo");
+assert.equal(ingreso.destino, "belmonte");
+
+assert.equal(looksLikeCount(FRASES_B[1].texto), true);
+const count = parseCount(FRASES_B[1].texto, catalog);
 assert.ok(!("error" in count));
 assert.equal(count.lote, "241");
 assert.equal(count.bolsas, 320);

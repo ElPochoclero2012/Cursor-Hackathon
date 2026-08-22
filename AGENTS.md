@@ -18,6 +18,13 @@ Avance: frases de galpón, dictado→texto, hipótesis de desvío, conteo.
 
 Chequeo: `node --import tsx scripts/verify-lenguaje.ts`
 
+Log en vivo: `http://localhost:3000/api/b-debug` (se recarga sola). En la terminal, líneas `[B]`.
+
+Frases:
+
+1. `Pasá 80 bolsas del lote 241 Agata de Dos Pancani al galpón.`
+2. `Conté 320 bolsas del lote 241 en Pancani.`
+
 ## C — Cara / N03 / demo
 
 `app/page.tsx`, `app/globals.css`, `app/layout.tsx`, `lib/proforma.ts`, `app/api/proforma`, `docs/`

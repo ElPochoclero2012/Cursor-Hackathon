@@ -172,10 +172,28 @@ function inferType(text: string): MovementType {
   if (/(retir|entreg|egres|sac[aoe]|salida|cliente|despach|orden de carga|cargar el camion|carga a cliente)/.test(f)) {
     return "egreso";
   }
-  if (/(ingres|recib|entrada|del campo|desde el campo|de chacra|de santa ana|tolva)/.test(f)) {
+  if (
+    /(ingres|recib|entrada|lleg|vinier|vinieron|bolsas nuevas|desde afuera|externas|del campo|desde el campo|de chacra|de santa ana|tolva)/.test(
+      f,
+    )
+  ) {
     return "ingreso";
   }
   return "transferencia";
+}
+
+/** ponytail: si hay dos bodegas, es traslado aunque el verbo sea «sacar/mandar». */
+function typeBetweenBodegas(
+  type: MovementType,
+  origen: string | null | undefined,
+  destino: string | null | undefined,
+  catalog: Catalog,
+): MovementType {
+  const bodega = new Set(catalog.locations.filter((l) => l.kind === "bodega").map((l) => l.id));
+  if (origen && destino && origen !== destino && bodega.has(origen) && bodega.has(destino)) {
+    return "transferencia";
+  }
+  return type;
 }
 
 /** ponytail: reglas + fuzzy de alias (1-2 letras) y números en palabras; Groq cubre el dictado sucio. */
@@ -197,11 +215,13 @@ export function parseWithRules(text: string, catalog: Catalog): ParsedMovement |
   const deMatch = f.match(/\bde(?:l)?\s+(.+?)(?:\s+al?\s+|\s+hacia\s+|$)/);
   const aMatch = f.match(/\b(?:al?|hacia|para)\s+(.+)$/);
 
-  if (deMatch) origen = resolveLocation(deMatch[1], catalog.aliases);
+  if (deMatch && !/^lote\b/.test(fold(deMatch[1]))) {
+    origen = resolveLocation(deMatch[1], catalog.aliases);
+  }
   if (aMatch) destino = resolveLocation(aMatch[1], catalog.aliases);
-  if (!origen) origen = resolveLocation(text, catalog.aliases);
+  if (!origen && type !== "ingreso") origen = resolveLocation(text, catalog.aliases);
 
-  if (type === "transferencia" && origen && !destino) {
+  if (origen && !destino) {
     const ids = new Set(Object.values(catalog.aliases));
     for (const id of ids) {
       if (id === origen) continue;
@@ -215,16 +235,17 @@ export function parseWithRules(text: string, catalog: Catalog): ParsedMovement |
     }
   }
 
-  if (type === "ingreso" && !destino) destino = origen;
-  if (type === "ingreso" && destino === origen) origen = "campo";
+  const finalType = typeBetweenBodegas(type, origen, destino, catalog);
+  if (finalType === "ingreso" && !destino) destino = origen ?? resolveLocation(text, catalog.aliases);
+  if (finalType === "ingreso" && (!origen || origen === destino)) origen = "campo";
 
   return {
-    type,
+    type: finalType,
     lote: lot.code,
     variedad: lot.variety,
     bolsas,
-    origen: type === "ingreso" ? origen ?? "campo" : origen,
-    destino: type === "egreso" ? destino ?? "externo" : destino,
+    origen: finalType === "ingreso" ? origen ?? "campo" : origen,
+    destino: finalType === "egreso" ? destino ?? "externo" : destino,
     remito: null,
     confidence: origen || destino ? "high" : "low",
     source: "rules",
@@ -260,7 +281,9 @@ export async function parseWithGroq(
           content: `Interpretá stock de semilla. Puede ser movimiento O conteo físico. Dictado con errores.
 Si es conteo (conté, conteo, hay en piso): JSON {"kind":"count","lote":"...","bolsas":n,"origen":"id bodega"}
 Si es movimiento: JSON {"kind":"move","type":"ingreso|transferencia|egreso","lote":"...","bolsas":n,"origen":"id o null","destino":"id o null"}
-Mandá, llevá, enviá a frío = transferencia. Del campo / tolva = ingreso. Retiro, entrega, orden de carga = egreso.
+De un frío/galpón a otro (aunque diga sacaron, mandaron, llevaron) = transferencia.
+Llegaron / recibimos / bolsas nuevas / desde afuera a una bodega = ingreso, origen campo (nunca la misma bodega de origen y destino).
+Retiro/despacho a cliente/externo = egreso.
 Ubicaciones: ${locList}
 Alias: ${aliasList}
 Lotes: ${lotList}
@@ -298,11 +321,17 @@ Solo ids y códigos del catálogo.`,
   if (!lot || !bolsas) return { error: "Groq: lote o cantidad" };
 
   const ids = new Set(catalog.locations.map((l) => l.id));
-  const origen = parsed.origen && ids.has(parsed.origen) ? parsed.origen : null;
-  const destino = parsed.destino && ids.has(parsed.destino) ? parsed.destino : null;
+  let origen = parsed.origen && ids.has(parsed.origen) ? parsed.origen : null;
+  let destino = parsed.destino && ids.has(parsed.destino) ? parsed.destino : null;
+  let moveType = typeBetweenBodegas(type, origen, destino, catalog);
+  if (inferType(text) === "ingreso") {
+    moveType = "ingreso";
+    if (!destino) destino = origen;
+    if (!origen || origen === destino) origen = "campo";
+  }
 
   return {
-    type,
+    type: moveType,
     lote: lot.code,
     variedad: lot.variety,
     bolsas,

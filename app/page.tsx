@@ -80,19 +80,20 @@ export default function Page() {
   const [doc, setDoc] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    const json = (url: string) => fetch(url).then((r) => r.json()).catch(() => null);
     const [s, m, c, k, p] = await Promise.all([
-      fetch("/api/stock").then((r) => r.json()),
-      fetch("/api/movements").then((r) => r.json()),
-      fetch("/api/catalog").then((r) => r.json()),
-      fetch("/api/counts").then((r) => r.json()),
-      fetch("/api/parse").then((r) => r.json()),
+      json("/api/stock"),
+      json("/api/movements"),
+      json("/api/catalog"),
+      json("/api/counts"),
+      json("/api/parse"),
     ]);
-    setStock(s);
-    setMovements(m);
-    setCounts(k);
-    setGroq(Boolean(p.groq));
+    if (s && Array.isArray(s.rows) && Array.isArray(s.locations)) setStock(s);
+    if (Array.isArray(m)) setMovements(m);
+    if (Array.isArray(k)) setCounts(k);
+    setGroq(Boolean(p?.groq));
     const map: Record<string, string> = {};
-    for (const loc of c.locations as { id: string; name: string }[]) map[loc.id] = loc.name;
+    for (const loc of (c?.locations ?? []) as { id: string; name: string }[]) map[loc.id] = loc.name;
     setNames(map);
   }, []);
 
@@ -104,7 +105,7 @@ export default function Page() {
     () => (stock?.locations ?? []).map((l) => ({ id: l.id, name: l.name })),
     [stock],
   );
-  const lotCodes = useMemo(() => stock?.rows.map((r) => r.code) ?? ["241", "810"], [stock]);
+  const lotCodes = useMemo(() => stock?.rows?.map((r) => r.code) ?? ["241", "810"], [stock]);
 
   const rows = useMemo(() => {
     if (!stock) return [];
