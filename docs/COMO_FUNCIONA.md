@@ -26,7 +26,7 @@ Unidad que manda: **bolsas**. Los kg se calculan si el lote tiene `kg_per_bag`.
 ## Flujo de carga
 
 1. El operario dicta o escribe.
-2. `POST /api/parse` → `parseMovement` (reglas locales sobre lotes y alias; **sin OpenAI**).
+2. `POST /api/parse` → Groq si hay `GROQ_API_KEY`, si no reglas (+ fuzzy de alias y números en palabras).
 3. La pantalla muestra origen, destino, lote y bolsas. **Nada se graba todavía.**
 4. Confirmar → `POST /api/movements` → `applyMovement` en una transacción SQLite (`BEGIN IMMEDIATE`).
 5. Si el origen no tiene bolsas suficientes: HTTP 409 y un mensaje en español. El stock no cambia.

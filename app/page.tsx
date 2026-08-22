@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type StockPayload = {
   locations: { id: string; name: string }[];
@@ -30,6 +30,7 @@ type Draft = {
   bolsas: number;
   origen?: string | null;
   destino?: string | null;
+  source?: string;
 };
 
 type CountRow = {
@@ -60,6 +61,10 @@ export default function Page() {
   const [msg, setMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
+  const [groq, setGroq] = useState(false);
+  const wantMic = useRef(false);
+  const recRef = useRef<SpeechRecognition | null>(null);
+  const spokenRef = useRef("");
   const [names, setNames] = useState<Record<string, string>>({});
   const [countLot, setCountLot] = useState("241");
   const [countLoc, setCountLoc] = useState("dospanca");
@@ -74,15 +79,17 @@ export default function Page() {
   const [doc, setDoc] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [s, m, c, k] = await Promise.all([
+    const [s, m, c, k, p] = await Promise.all([
       fetch("/api/stock").then((r) => r.json()),
       fetch("/api/movements").then((r) => r.json()),
       fetch("/api/catalog").then((r) => r.json()),
       fetch("/api/counts").then((r) => r.json()),
+      fetch("/api/parse").then((r) => r.json()),
     ]);
     setStock(s);
     setMovements(m);
     setCounts(k);
+    setGroq(Boolean(p.groq));
     const map: Record<string, string> = {};
     for (const loc of c.locations as { id: string; name: string }[]) map[loc.id] = loc.name;
     setNames(map);
@@ -155,7 +162,22 @@ export default function Page() {
     }
   }
 
+  function stopDictate() {
+    wantMic.current = false;
+    try {
+      recRef.current?.stop();
+    } catch {
+      /* noop */
+    }
+    recRef.current = null;
+    setListening(false);
+  }
+
   function dictate(into: (s: string) => void) {
+    if (listening) {
+      stopDictate();
+      return;
+    }
     const SR =
       typeof window !== "undefined" &&
       ((window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognition }).webkitSpeechRecognition ||
@@ -163,21 +185,63 @@ export default function Page() {
     if (!SR) {
       setMsg({
         kind: "error",
-        text: "Este navegador no dicta. Usá Chrome o pegá el texto.",
+        text: "El dictado del navegador pide Chrome o Edge. En el evento: Wispr Flow (ref.wisprflow.ai/cursor) escribe en el recuadro y después Interpretar.",
       });
       return;
     }
+    if (!window.isSecureContext) {
+      setMsg({
+        kind: "error",
+        text: "El micrófono solo anda en https o localhost. Usá la URL de Vercel o Chrome en http://localhost:3000.",
+      });
+      return;
+    }
+    spokenRef.current = "";
     const rec = new SR();
     rec.lang = "es-AR";
-    rec.interimResults = false;
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 3;
+    recRef.current = rec;
+    wantMic.current = true;
     rec.onstart = () => setListening(true);
-    rec.onend = () => setListening(false);
-    rec.onerror = () => {
-      setListening(false);
-      setMsg({ kind: "error", text: "No se oyó el micrófono." });
+    rec.onend = () => {
+      if (wantMic.current) {
+        try {
+          rec.start();
+        } catch {
+          setListening(false);
+        }
+      } else {
+        setListening(false);
+      }
     };
-    rec.onresult = (ev: SpeechRecognitionEvent) => into(ev.results[0][0].transcript);
-    rec.start();
+    rec.onerror = (ev: { error?: string }) => {
+      if (ev.error === "no-speech" || ev.error === "aborted") return;
+      stopDictate();
+      const hint =
+        ev.error === "not-allowed"
+          ? "Chrome bloqueó el micrófono. Permiso del candado → Permitir."
+          : "Dictado inestable. Dejá el texto y usá Interpretar (Groq corrige errores).";
+      setMsg({ kind: "error", text: hint });
+    };
+    rec.onresult = (ev: SpeechRecognitionEvent) => {
+      let interim = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) {
+          spokenRef.current = `${spokenRef.current} ${t}`.trim();
+        } else {
+          interim += t;
+        }
+      }
+      into(`${spokenRef.current} ${interim}`.trim());
+    };
+    try {
+      rec.start();
+    } catch {
+      setMsg({ kind: "error", text: "No se pudo iniciar el micrófono. Probá de nuevo en Chrome." });
+    }
   }
 
   async function doCount() {
@@ -279,7 +343,11 @@ export default function Page() {
               <section className="card">
                 <h2>Registrar movimiento</h2>
                 <p className="hint">
-                  «Pasá 80 bolsas del lote 241 Agata de Dos Pancani al galpón». Sin OpenAI.
+                  {groq
+                    ? "Interpretar usa Groq (gratis) y aguanta dictado sucio: pancani, ochenta, ágata."
+                    : "Sin GROQ_API_KEY el parseo es por reglas. Cargá la clave en Vercel para corregir error humano."}{" "}
+                  Micrófono: Chrome/Edge, https. Clic otra vez para cortar. Si se cae, dictá con Wispr Flow del
+                  hackathon y pegá acá.
                 </p>
                 <label htmlFor="frase">Voz o texto</label>
                 <textarea
@@ -291,7 +359,7 @@ export default function Page() {
                 />
                 <div className="row-actions">
                   <button type="button" className="btn-secondary" onClick={() => dictate(setText)}>
-                    {listening ? "Escuchando…" : "Micrófono"}
+                    {listening ? "Cortar micrófono" : "Micrófono"}
                   </button>
                   <button type="button" className="btn-primary" onClick={parse} disabled={busy || !text.trim()}>
                     Interpretar
@@ -302,7 +370,10 @@ export default function Page() {
                     <strong>¿Confirmás este movimiento?</strong>
                     <dl>
                       <dt>Tipo</dt>
-                      <dd>{TYPE_LABEL[draft.type] || draft.type}</dd>
+                      <dd>
+                        {TYPE_LABEL[draft.type] || draft.type}
+                        {draft.source === "groq" ? " · IA Groq" : " · reglas"}
+                      </dd>
                       <dt>Lote</dt>
                       <dd>
                         {draft.lote}
@@ -560,14 +631,18 @@ function History({ movements }: { movements: Movement[] }) {
 
 type SpeechRecognition = {
   lang: string;
+  continuous: boolean;
   interimResults: boolean;
+  maxAlternatives: number;
   onstart: () => void;
   onend: () => void;
-  onerror: () => void;
+  onerror: (ev: { error?: string }) => void;
   onresult: (ev: SpeechRecognitionEvent) => void;
   start: () => void;
+  stop: () => void;
 };
 
 type SpeechRecognitionEvent = {
-  results: { 0: { 0: { transcript: string } } };
+  resultIndex: number;
+  results: Array<{ isFinal: boolean; 0: { transcript: string } }>;
 };
