@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type StockPayload = {
   locations: { id: string; name: string }[];
@@ -60,6 +60,10 @@ export default function Page() {
   const [msg, setMsg] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
+  const [groq, setGroq] = useState(false);
+  const recRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
   const [countLot, setCountLot] = useState("241");
   const [countLoc, setCountLoc] = useState("dospanca");
@@ -74,17 +78,20 @@ export default function Page() {
   const [doc, setDoc] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [s, m, c, k] = await Promise.all([
-      fetch("/api/stock").then((r) => r.json()),
-      fetch("/api/movements").then((r) => r.json()),
-      fetch("/api/catalog").then((r) => r.json()),
-      fetch("/api/counts").then((r) => r.json()),
+    const json = (url: string) => fetch(url).then((r) => r.json()).catch(() => null);
+    const [s, m, c, k, t] = await Promise.all([
+      json("/api/stock"),
+      json("/api/movements"),
+      json("/api/catalog"),
+      json("/api/counts"),
+      json("/api/transcribe"),
     ]);
-    setStock(s);
-    setMovements(m);
-    setCounts(k);
+    if (s && Array.isArray(s.rows) && Array.isArray(s.locations)) setStock(s);
+    if (Array.isArray(m)) setMovements(m);
+    if (Array.isArray(k)) setCounts(k);
+    setGroq(Boolean(t?.groq));
     const map: Record<string, string> = {};
-    for (const loc of c.locations as { id: string; name: string }[]) map[loc.id] = loc.name;
+    for (const loc of (c?.locations ?? []) as { id: string; name: string }[]) map[loc.id] = loc.name;
     setNames(map);
   }, []);
 
@@ -155,29 +162,81 @@ export default function Page() {
     }
   }
 
-  function dictate(into: (s: string) => void) {
-    const SR =
-      typeof window !== "undefined" &&
-      ((window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognition }).webkitSpeechRecognition ||
-        (window as unknown as { SpeechRecognition?: new () => SpeechRecognition }).SpeechRecognition);
-    if (!SR) {
+  function stopStream() {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  }
+
+  function stopDictate() {
+    const rec = recRef.current;
+    if (rec && rec.state !== "inactive") rec.stop();
+    recRef.current = null;
+    stopStream();
+    setListening(false);
+  }
+
+  async function dictate(into: (s: string) => void) {
+    if (listening) {
+      recRef.current?.stop();
+      return;
+    }
+    if (!window.isSecureContext) {
+      setMsg({ kind: "error", text: "El micrófono pide https o localhost (Chrome)." });
+      return;
+    }
+    if (!groq) {
       setMsg({
         kind: "error",
-        text: "Este navegador no dicta. Usá Chrome o pegá el texto.",
+        text: "Falta GROQ_API_KEY en Vercel (Settings → Environment Variables) y Redeploy. Local: .env.local y reiniciá npm run dev.",
       });
       return;
     }
-    const rec = new SR();
-    rec.lang = "es-AR";
-    rec.interimResults = false;
-    rec.onstart = () => setListening(true);
-    rec.onend = () => setListening(false);
-    rec.onerror = () => {
-      setListening(false);
-      setMsg({ kind: "error", text: "No se oyó el micrófono." });
-    };
-    rec.onresult = (ev: SpeechRecognitionEvent) => into(ev.results[0][0].transcript);
-    rec.start();
+    setMsg(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : "";
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      recRef.current = rec;
+      chunksRef.current = [];
+      rec.ondataavailable = (ev) => {
+        if (ev.data.size > 0) chunksRef.current.push(ev.data);
+      };
+      rec.onstop = async () => {
+        stopStream();
+        setListening(false);
+        recRef.current = null;
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        chunksRef.current = [];
+        if (blob.size < 64) {
+          setMsg({ kind: "error", text: "Grabación vacía. Clic en Micrófono, hablá 2–3 s, clic otra vez para cortar." });
+          return;
+        }
+        setBusy(true);
+        try {
+          const fd = new FormData();
+          fd.append("audio", blob, "dictado.webm");
+          const res = await fetch("/api/transcribe", { method: "POST", body: fd });
+          const data = await res.json();
+          if (!res.ok) {
+            setMsg({ kind: "error", text: data.error || "No se pudo transcribir." });
+            return;
+          }
+          into(String(data.text || "").trim());
+        } finally {
+          setBusy(false);
+        }
+      };
+      rec.start();
+      setListening(true);
+    } catch {
+      stopDictate();
+      setMsg({ kind: "error", text: "Chrome bloqueó el micrófono. Candado de la URL → Permitir." });
+    }
   }
 
   async function doCount() {
@@ -279,7 +338,8 @@ export default function Page() {
               <section className="card">
                 <h2>Registrar movimiento</h2>
                 <p className="hint">
-                  «Pasá 80 bolsas del lote 241 Agata de Dos Pancani al galpón». Sin OpenAI.
+                  «Pasá 80 bolsas del lote 241 Agata de Dos Pancani al galpón». Micrófono: clic, hablá, clic otra
+                  vez para transcribir (Groq Whisper, no el dictado de Chrome).
                 </p>
                 <label htmlFor="frase">Voz o texto</label>
                 <textarea
@@ -291,7 +351,7 @@ export default function Page() {
                 />
                 <div className="row-actions">
                   <button type="button" className="btn-secondary" onClick={() => dictate(setText)}>
-                    {listening ? "Escuchando…" : "Micrófono"}
+                    {listening ? "Cortar y transcribir" : "Micrófono"}
                   </button>
                   <button type="button" className="btn-primary" onClick={parse} disabled={busy || !text.trim()}>
                     Interpretar
@@ -557,17 +617,3 @@ function History({ movements }: { movements: Movement[] }) {
     </section>
   );
 }
-
-type SpeechRecognition = {
-  lang: string;
-  interimResults: boolean;
-  onstart: () => void;
-  onend: () => void;
-  onerror: () => void;
-  onresult: (ev: SpeechRecognitionEvent) => void;
-  start: () => void;
-};
-
-type SpeechRecognitionEvent = {
-  results: { 0: { 0: { transcript: string } } };
-};
