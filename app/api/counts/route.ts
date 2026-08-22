@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { logB } from "@/lib/b-debug";
 import { getCatalog } from "@/lib/catalog";
 import { listCounts, recordCount, recordCountFromText } from "@/lib/count";
 import { StockError } from "@/lib/stock";
@@ -24,6 +25,13 @@ export async function POST(req: Request) {
           locationId: String(body.origen ?? ""),
           counted: Number(body.bolsas),
         });
+    logB("POST /api/counts", body, {
+      ok: result.ok,
+      lote: body.lote,
+      counted: result.counted,
+      declared: result.declared,
+      hypothesis: result.hypothesis,
+    });
     return NextResponse.json({ ...result, counts: await listCounts() });
   } catch (err) {
     if (err instanceof StockError) {

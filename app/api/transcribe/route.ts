@@ -1,17 +1,28 @@
+<<<<<<< HEAD
+=======
+import { logB } from "@/lib/b-debug";
+>>>>>>> 9ea89a02fa22f0fdc387bde80dde1ede3096653f
 import { groqKey } from "@/lib/groq-key";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
+<<<<<<< HEAD
 export async function GET() {
   return NextResponse.json({ groq: Boolean(groqKey()) });
 }
 
+=======
+>>>>>>> 9ea89a02fa22f0fdc387bde80dde1ede3096653f
 export async function POST(req: Request) {
   const key = groqKey();
   if (!key) {
     return NextResponse.json(
+<<<<<<< HEAD
       { error: "Falta GROQ_API_KEY. En Vercel: Settings → Environment Variables → Redeploy." },
+=======
+      { error: "Falta GROQ_API_KEY. Sin ella el micrófono no puede transcribir." },
+>>>>>>> 9ea89a02fa22f0fdc387bde80dde1ede3096653f
       { status: 503 },
     );
   }
@@ -45,7 +56,14 @@ export async function POST(req: Request) {
   const data = (await res.json()) as { text?: string };
   const text = (data.text ?? "").trim();
   if (!text) {
+<<<<<<< HEAD
     return NextResponse.json({ error: "No se entendió el audio. Hablá más cerca y más largo." }, { status: 422 });
   }
+=======
+    logB("POST /api/transcribe", { bytes: audio.size }, { error: "vacío" });
+    return NextResponse.json({ error: "No se entendió el audio. Hablá más cerca y más largo." }, { status: 422 });
+  }
+  logB("POST /api/transcribe", { bytes: audio.size }, { text });
+>>>>>>> 9ea89a02fa22f0fdc387bde80dde1ede3096653f
   return NextResponse.json({ text });
 }
