@@ -14,6 +14,6 @@ El MVP no implementa esto. Cada ítem indica el archivo, no un rediseño.
 | Usuarios / quién cargó | Columna `user` en `movements`. Auth después; el motor no depende de ella. |
 | STT aparte de Web Speech | El micrófono solo llena el textarea (`app/page.tsx`). Cualquier STT que devuelva texto entra al mismo `POST /api/parse`. |
 | Otro parser / LLM gratis | Sustituir el cuerpo de `parseMovement` en `lib/parse.ts`. `applyMovement` no se toca. |
-| Postgres | Conservar la firma de `applyMovement`. Cambiar `lib/db.ts`. |
+| Postgres / otra DB | Conservar `applyMovement`. El adaptador está en `lib/db.ts` (hoy: archivo local o Turso). |
 
 Atajos actuales (`ponytail:` en código): parser por reglas incompleto frente a remitos narrados; saldo denormalizado en `stock` (el historial alcanza para reconstruir si hace falta un recálculo).

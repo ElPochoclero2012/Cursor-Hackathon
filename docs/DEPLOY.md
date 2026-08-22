@@ -1,33 +1,41 @@
-# Deploy (Render, créditos del hackathon)
+# Deploy gratis (Vercel + Turso)
 
-El sistema usa **SQLite en un proceso Node**. Por eso va a **Render** (Web Service + disco), no a Netlify: Netlify es serverless y el archivo de stock se perdería en cada cold start. Exa y Firecrawl son búsqueda/crawling, no hosting.
+Render cobró o pidió plan pago: no lo usamos. Para **testear y mostrar la demo** alcanza el plan Hobby de Vercel (gratis) y una base **Turso** (SQLite en la nube, también gratis). El parseo sigue sin OpenAI.
 
-## 1. Créditos
+No uses Netlify para esto: cada función serverless perdería el archivo SQLite. Turso es el mismo SQL, compartido entre requests.
 
-Reclamá los USD 100 de Render: https://credits-portal-mmdm.onrender.com/claim/cafe-cursor
+## 1. Base Turso (2 minutos)
 
-## 2. Repo en GitHub
+1. Entrá a https://turso.tech y creá cuenta (GitHub).
+2. En el dashboard: **Create Database** (región cercana, plan free).
+3. Copiá:
+   - `TURSO_DATABASE_URL` (empieza con `libsql://`)
+   - `TURSO_AUTH_TOKEN` (Create token)
 
-El servicio se construye desde git. Si el remoto aún no existe:
+La primera request a la app crea tablas y carga el seed.
+
+## 2. Subir el repo y Vercel
+
+En PowerShell el comando es `npx vercel`, no `vercel`. Si dice que no hay credenciales:
 
 ```bash
-git add .
-git commit -m "Stock semilla listo para Render"
-git remote add origin <tu-repo>
-git push -u origin main
+npx vercel login
+npx vercel
 ```
 
-## 3. Servicio en Render
+Login gratis, proyecto Hobby, **no** hace falta tarjeta para el plan hobby típico.
 
-1. [dashboard.render.com](https://dashboard.render.com) → **New** → **Blueprint** (usa `render.yaml`) **o** Web Service conectado al repo.
-2. Runtime **Node**, versión **22**.
-3. Build: `npm install && npm run build`
-4. Start: `npm start`
-5. Disco persistente: mount `/var/data`, env `STOCK_DB_PATH=/var/data/app.db` (ya está en `render.yaml`).
-6. Plan **Starter** (el free se duerme y a veces no trae disco; los créditos cubren Starter).
+O desde https://vercel.com → Add New → importá el GitHub.
 
-La URL pública queda tipo `https://stock-semilla.onrender.com`. Esa es la que mostrás en la demo.
+En **Settings → Environment Variables** (Production y Preview):
 
-## Parseo (sin OpenAI)
+```
+TURSO_DATABASE_URL=libsql://....
+TURSO_AUTH_TOKEN=...
+```
 
-No hay API de OpenAI. `lib/parse.ts` interpreta el español de galpón con reglas sobre el catálogo (lotes y alias de la planilla). Cero costo, funciona offline en el servidor. El micrófono del navegador (Web Speech) es gratis; Wispr Flow del evento es opcional en la PC, no hace falta en el deploy.
+Redeploy. La URL queda `https://….vercel.app`.
+
+## Parseo
+
+Reglas locales en `lib/parse.ts`. Sin API paga.

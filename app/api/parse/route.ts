@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   if (!text) {
     return NextResponse.json({ error: "Escribí o dictá un movimiento." }, { status: 400 });
   }
-  const result = parseMovement(text, getCatalog());
+  const result = parseMovement(text, await getCatalog());
   if ("error" in result) {
     return NextResponse.json(result, { status: 422 });
   }

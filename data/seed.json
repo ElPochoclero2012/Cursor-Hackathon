@@ -61,5 +61,11 @@
     { "lot": "602", "location": "cecive", "bags": 210 },
     { "lot": "410", "location": "belmonte", "bags": 95 },
     { "lot": "700", "location": "galpon", "bags": 300 }
-  ]
+  ],
+  "trace": {
+    "241": { "campo": "Santa Ana", "categoria": "sin tamañar", "calibre": "mixto", "bolsa": "roja", "hilo": "blanco" },
+    "810": { "campo": "Santa Ana", "categoria": "exportacion", "calibre": "sin chicas", "bolsa": "verde", "hilo": "verde" },
+    "820": { "campo": "Santa Ana", "categoria": "exportacion", "calibre": "sin chicas", "bolsa": "verde", "hilo": "blanco" },
+    "300": { "campo": "Santa Ana", "categoria": "recibo", "calibre": "granel/bolsa", "bolsa": "blanca", "hilo": "blanco" }
+  }
 }

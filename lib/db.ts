@@ -1,6 +1,7 @@
-import { DatabaseSync } from "node:sqlite";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { createClient, type Client } from "@libsql/client";
 
 type Seed = {
   locations: { id: string; name: string; kind: LocationKind; sort: number }[];
@@ -28,13 +29,17 @@ export type Lot = {
   kg_per_bag: number | null;
 };
 
-const DB_PATH =
-  process.env.STOCK_DB_PATH || join(process.cwd(), "data", "app.db");
+export type SqlArg = string | number | bigint | null;
 
-let db: DatabaseSync | null = null;
+export type Sql = {
+  exec(text: string): Promise<void>;
+  get<T>(text: string, ...args: SqlArg[]): Promise<T | undefined>;
+  all<T>(text: string, ...args: SqlArg[]): Promise<T[]>;
+  run(text: string, ...args: SqlArg[]): Promise<void>;
+  withTransaction<T>(fn: (sql: Sql) => Promise<T>): Promise<T>;
+};
 
-function schema(database: DatabaseSync) {
-  database.exec(`
+const SCHEMA = `
     CREATE TABLE IF NOT EXISTS locations (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -69,82 +74,183 @@ function schema(database: DatabaseSync) {
       raw_text TEXT,
       created_at TEXT NOT NULL
     );
-  `);
+    CREATE TABLE IF NOT EXISTS counts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lot_code TEXT NOT NULL,
+      location_id TEXT NOT NULL,
+      declared_bags INTEGER NOT NULL,
+      counted_bags INTEGER NOT NULL,
+      hypothesis TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS proformas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lot_code TEXT NOT NULL,
+      location_id TEXT NOT NULL,
+      bags INTEGER NOT NULL,
+      buyer TEXT,
+      dest_country TEXT,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+`;
+
+const DB_PATH =
+  process.env.STOCK_DB_PATH || join(process.cwd(), "data", "app.db");
+
+let sqlPromise: Promise<Sql> | null = null;
+let sqlite: DatabaseSync | null = null;
+
+function sqliteAdapter(database: DatabaseSync): Sql {
+  const wrap = (db: DatabaseSync): Sql => ({
+    async exec(text) {
+      db.exec(text);
+    },
+    async get(text, ...args) {
+      return db.prepare(text).get(...args) as never;
+    },
+    async all(text, ...args) {
+      return db.prepare(text).all(...args) as never;
+    },
+    async run(text, ...args) {
+      db.prepare(text).run(...args);
+    },
+    async withTransaction(fn) {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const result = await fn(wrap(db));
+        db.exec("COMMIT");
+        return result;
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
+    },
+  });
+  return wrap(database);
 }
 
-function seedIfEmpty(database: DatabaseSync) {
-  const n = database.prepare("SELECT COUNT(*) AS c FROM locations").get() as {
-    c: number;
-  };
-  if (n.c > 0) return;
+function tursoAdapter(client: Client): Sql {
+  const runOn = (c: Pick<Client, "execute">): Sql => ({
+    async exec(text) {
+      for (const part of text.split(";").map((s) => s.trim()).filter(Boolean)) {
+        await c.execute(part);
+      }
+    },
+    async get(text, ...args) {
+      const rs = await c.execute({ sql: text, args });
+      return rs.rows[0] as never;
+    },
+    async all(text, ...args) {
+      const rs = await c.execute({ sql: text, args });
+      return rs.rows as never;
+    },
+    async run(text, ...args) {
+      await c.execute({ sql: text, args });
+    },
+    async withTransaction(fn) {
+      const tx = await client.transaction("write");
+      try {
+        const result = await fn(runOn(tx));
+        await tx.commit();
+        return result;
+      } catch (err) {
+        await tx.rollback();
+        throw err;
+      }
+    },
+  });
+  return runOn(client);
+}
 
-  const insLoc = database.prepare(
-    "INSERT INTO locations (id, name, kind, sort) VALUES (?, ?, ?, ?)",
-  );
+async function seedIfEmpty(sql: Sql) {
+  const n = await sql.get<{ c: number }>("SELECT COUNT(*) AS c FROM locations");
+  if (Number(n?.c ?? 0) > 0) return;
+
   for (const loc of seed.locations) {
-    insLoc.run(loc.id, loc.name, loc.kind, loc.sort);
+    await sql.run(
+      "INSERT INTO locations (id, name, kind, sort) VALUES (?, ?, ?, ?)",
+      loc.id,
+      loc.name,
+      loc.kind,
+      loc.sort,
+    );
   }
-
-  const insAlias = database.prepare(
-    "INSERT INTO aliases (alias, location_id) VALUES (?, ?)",
-  );
   for (const [id, list] of Object.entries(seed.aliases)) {
-    for (const a of list) insAlias.run(a.toLowerCase(), id);
+    for (const a of list) {
+      await sql.run("INSERT INTO aliases (alias, location_id) VALUES (?, ?)", a.toLowerCase(), id);
+    }
   }
-
-  const insLot = database.prepare(
-    "INSERT INTO lots (code, variety, kg_per_bag) VALUES (?, ?, ?)",
-  );
   for (const lot of seed.lots) {
-    insLot.run(lot.code, lot.variety, lot.kg_per_bag);
+    await sql.run(
+      "INSERT INTO lots (code, variety, kg_per_bag) VALUES (?, ?, ?)",
+      lot.code,
+      lot.variety,
+      lot.kg_per_bag,
+    );
   }
-
-  const insStock = database.prepare(
-    "INSERT INTO stock (lot_code, location_id, bags) VALUES (?, ?, ?)",
-  );
   for (const row of seed.stock) {
-    insStock.run(row.lot, row.location, row.bags);
+    await sql.run(
+      "INSERT INTO stock (lot_code, location_id, bags) VALUES (?, ?, ?)",
+      row.lot,
+      row.location,
+      row.bags,
+    );
   }
 }
 
-export function getDb(): DatabaseSync {
-  if (db) return db;
-  mkdirSync(dirname(DB_PATH), { recursive: true });
-  db = new DatabaseSync(DB_PATH);
-  schema(db);
-  seedIfEmpty(db);
-  return db;
+async function openSql(): Promise<Sql> {
+  const url = process.env.TURSO_DATABASE_URL;
+  let sql: Sql;
+  if (url) {
+    sql = tursoAdapter(
+      createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN }),
+    );
+  } else if (process.env.VERCEL) {
+    throw new Error(
+      "En Vercel hace falta TURSO_DATABASE_URL (SQLite gratis). Ver docs/DEPLOY.md",
+    );
+  } else {
+    mkdirSync(dirname(DB_PATH), { recursive: true });
+    sqlite = new DatabaseSync(DB_PATH);
+    sql = sqliteAdapter(sqlite);
+  }
+  await sql.exec(SCHEMA);
+  await seedIfEmpty(sql);
+  return sql;
+}
+
+export function getSql(): Promise<Sql> {
+  if (!sqlPromise) sqlPromise = openSql();
+  return sqlPromise;
 }
 
 export function closeDb() {
-  db?.close();
-  db = null;
+  sqlite?.close();
+  sqlite = null;
+  sqlPromise = null;
 }
 
-export function bodegas(database = getDb()): Location[] {
-  return database
-    .prepare(
-      "SELECT id, name, kind, sort FROM locations WHERE kind = 'bodega' ORDER BY sort",
-    )
-    .all() as Location[];
+export async function bodegas(sql?: Sql): Promise<Location[]> {
+  const db = sql ?? (await getSql());
+  return db.all("SELECT id, name, kind, sort FROM locations WHERE kind = 'bodega' ORDER BY sort");
 }
 
-export function allLocations(database = getDb()): Location[] {
-  return database
-    .prepare("SELECT id, name, kind, sort FROM locations ORDER BY sort")
-    .all() as Location[];
+export async function allLocations(sql?: Sql): Promise<Location[]> {
+  const db = sql ?? (await getSql());
+  return db.all("SELECT id, name, kind, sort FROM locations ORDER BY sort");
 }
 
-export function allLots(database = getDb()): Lot[] {
-  return database
-    .prepare("SELECT code, variety, kg_per_bag FROM lots ORDER BY variety, code")
-    .all() as Lot[];
+export async function allLots(sql?: Sql): Promise<Lot[]> {
+  const db = sql ?? (await getSql());
+  return db.all("SELECT code, variety, kg_per_bag FROM lots ORDER BY variety, code");
 }
 
-export function aliasMap(database = getDb()): Record<string, string> {
-  const rows = database
-    .prepare("SELECT alias, location_id FROM aliases")
-    .all() as { alias: string; location_id: string }[];
+export async function aliasMap(sql?: Sql): Promise<Record<string, string>> {
+  const db = sql ?? (await getSql());
+  const rows = await db.all<{ alias: string; location_id: string }>(
+    "SELECT alias, location_id FROM aliases",
+  );
   const map: Record<string, string> = {};
   for (const r of rows) map[r.alias] = r.location_id;
   return map;

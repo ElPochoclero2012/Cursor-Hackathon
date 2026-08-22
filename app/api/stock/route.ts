@@ -3,6 +3,6 @@ import { listStock } from "@/lib/stock";
 
 export const runtime = "nodejs";
 
-export function GET() {
-  return NextResponse.json(listStock());
+export async function GET() {
+  return NextResponse.json(await listStock());
 }

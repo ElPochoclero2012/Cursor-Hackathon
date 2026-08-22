@@ -3,3 +3,5 @@ node_modules
 data/app.db
 .env
 .env.local
+.vercel
+.env*

@@ -259,3 +259,49 @@ tbody tr:hover { background: #f7fafc; }
 .empty { color: var(--muted); padding: 18px 4px; }
 
 .listening { box-shadow: 0 0 0 3px rgba(196, 92, 38, 0.25); }
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tabs button {
+  background: #1d4e6e;
+  color: #d7e6ef;
+  border: 1px solid #2d6a90;
+  font-weight: 650;
+  padding: 8px 12px;
+}
+
+.tabs button.on {
+  background: #fff;
+  color: var(--navy);
+}
+
+.fields {
+  display: grid;
+  gap: 10px;
+}
+
+.doc {
+  white-space: pre-wrap;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.85rem;
+  background: #f6f9fb;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  margin: 12px 0 0;
+}
+
+.hypo {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff8f0;
+  border: 1px solid #f0d3b8;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+

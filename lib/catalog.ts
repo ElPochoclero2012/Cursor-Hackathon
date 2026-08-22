@@ -1,11 +1,10 @@
-import type { DatabaseSync } from "node:sqlite";
-import { allLots, aliasMap, allLocations, bodegas, getDb } from "./db";
+import { allLots, aliasMap, allLocations, bodegas } from "./db";
 
-export function getCatalog(database = getDb()) {
+export async function getCatalog() {
   return {
-    locations: allLocations(database),
-    bodegas: bodegas(database),
-    lots: allLots(database),
-    aliases: aliasMap(database),
+    locations: await allLocations(),
+    bodegas: await bodegas(),
+    lots: await allLots(),
+    aliases: await aliasMap(),
   };
 }

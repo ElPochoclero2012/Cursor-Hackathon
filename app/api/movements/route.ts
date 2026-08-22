@@ -3,8 +3,8 @@ import { applyMovement, listMovements, StockError, type MovementType } from "@/l
 
 export const runtime = "nodejs";
 
-export function GET() {
-  return NextResponse.json(listMovements());
+export async function GET() {
+  return NextResponse.json(await listMovements());
 }
 
 export async function POST(req: Request) {
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   };
 
   try {
-    applyMovement({
+    await applyMovement({
       type: body.type as MovementType,
       lotCode: String(body.lote ?? ""),
       bags: Number(body.bolsas),
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
       notes: body.notes,
       rawText: body.raw_text,
     });
-    return NextResponse.json({ ok: true, movements: listMovements() });
+    return NextResponse.json({ ok: true, movements: await listMovements() });
   } catch (err) {
     if (err instanceof StockError) {
       return NextResponse.json({ error: err.message }, { status: 409 });

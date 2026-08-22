@@ -30,8 +30,17 @@ type Draft = {
   bolsas: number;
   origen?: string | null;
   destino?: string | null;
-  remito?: string | null;
-  source?: string;
+};
+
+type CountRow = {
+  id: number;
+  lot_code: string;
+  variety: string;
+  location_name: string;
+  declared_bags: number;
+  counted_bags: number;
+  hypothesis: string;
+  created_at: string;
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -41,8 +50,10 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default function Page() {
+  const [tab, setTab] = useState<"n01" | "n02" | "n03">("n01");
   const [stock, setStock] = useState<StockPayload | null>(null);
   const [movements, setMovements] = useState<Movement[]>([]);
+  const [counts, setCounts] = useState<CountRow[]>([]);
   const [text, setText] = useState("");
   const [q, setQ] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -50,19 +61,30 @@ export default function Page() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [names, setNames] = useState<Record<string, string>>({});
+  const [countLot, setCountLot] = useState("241");
+  const [countLoc, setCountLoc] = useState("dospanca");
+  const [countBags, setCountBags] = useState("320");
+  const [hypo, setHypo] = useState<string | null>(null);
+  const [loadBags, setLoadBags] = useState("400");
+  const [docLot, setDocLot] = useState("810");
+  const [docLoc, setDocLoc] = useState("galpon");
+  const [docBags, setDocBags] = useState("200");
+  const [buyer, setBuyer] = useState("Parmentier");
+  const [country, setCountry] = useState("Brasil");
+  const [doc, setDoc] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [s, m, c] = await Promise.all([
+    const [s, m, c, k] = await Promise.all([
       fetch("/api/stock").then((r) => r.json()),
       fetch("/api/movements").then((r) => r.json()),
       fetch("/api/catalog").then((r) => r.json()),
+      fetch("/api/counts").then((r) => r.json()),
     ]);
     setStock(s);
     setMovements(m);
+    setCounts(k);
     const map: Record<string, string> = {};
-    for (const loc of c.locations as { id: string; name: string }[]) {
-      map[loc.id] = loc.name;
-    }
+    for (const loc of c.locations as { id: string; name: string }[]) map[loc.id] = loc.name;
     setNames(map);
   }, []);
 
@@ -70,14 +92,18 @@ export default function Page() {
     load();
   }, [load]);
 
+  const bodegas = useMemo(
+    () => (stock?.locations ?? []).map((l) => ({ id: l.id, name: l.name })),
+    [stock],
+  );
+  const lotCodes = useMemo(() => stock?.rows.map((r) => r.code) ?? ["241", "810"], [stock]);
+
   const rows = useMemo(() => {
     if (!stock) return [];
     const needle = q.trim().toLowerCase();
     if (!needle) return stock.rows;
     return stock.rows.filter(
-      (r) =>
-        r.code.toLowerCase().includes(needle) ||
-        r.variety.toLowerCase().includes(needle),
+      (r) => r.code.toLowerCase().includes(needle) || r.variety.toLowerCase().includes(needle),
     );
   }, [stock, q]);
 
@@ -129,7 +155,7 @@ export default function Page() {
     }
   }
 
-  function dictate() {
+  function dictate(into: (s: string) => void) {
     const SR =
       typeof window !== "undefined" &&
       ((window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognition }).webkitSpeechRecognition ||
@@ -137,7 +163,7 @@ export default function Page() {
     if (!SR) {
       setMsg({
         kind: "error",
-        text: "Este navegador no dicta. Usá Chrome o pegá el texto (está en docs/SPEECH.md).",
+        text: "Este navegador no dicta. Usá Chrome o pegá el texto.",
       });
       return;
     }
@@ -148,13 +174,82 @@ export default function Page() {
     rec.onend = () => setListening(false);
     rec.onerror = () => {
       setListening(false);
-      setMsg({ kind: "error", text: "No se oyó el micrófono. Pegá la frase de backup." });
+      setMsg({ kind: "error", text: "No se oyó el micrófono." });
     };
-    rec.onresult = (ev: SpeechRecognitionEvent) => {
-      const said = ev.results[0][0].transcript;
-      setText(said);
-    };
+    rec.onresult = (ev: SpeechRecognitionEvent) => into(ev.results[0][0].transcript);
     rec.start();
+  }
+
+  async function doCount() {
+    setBusy(true);
+    setMsg(null);
+    setHypo(null);
+    try {
+      const res = await fetch("/api/counts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lote: countLot, origen: countLoc, bolsas: Number(countBags) }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg({ kind: "error", text: data.error || "No se registró el conteo." });
+        return;
+      }
+      setHypo(data.hypothesis);
+      setMsg({ kind: data.ok ? "ok" : "error", text: data.ok ? "Conteo coincidente." : "Hay desvío: ver hipótesis." });
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doCarga() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const res = await fetch("/api/carga", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lote: countLot, origen: countLoc, bolsas: Number(loadBags) }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg({ kind: "error", text: data.error || "No se emitió la orden." });
+        return;
+      }
+      setMsg({ kind: "ok", text: "Orden de carga emitida. El stock de origen bajó." });
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function doProforma() {
+    setBusy(true);
+    setMsg(null);
+    setDoc(null);
+    try {
+      const res = await fetch("/api/proforma", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          lote: docLot,
+          origen: docLoc,
+          bolsas: Number(docBags),
+          buyer,
+          dest_country: country,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setMsg({ kind: "error", text: data.error || "No se armó la proforma." });
+        return;
+      }
+      setDoc(data.body);
+      setMsg({ kind: "ok", text: "Proforma armada con trazabilidad del lote." });
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -162,143 +257,304 @@ export default function Page() {
       <header className="app-header">
         <div>
           <h1>Stock de semilla</h1>
-          <p>Campaña 2026 · una sola fuente de verdad · bolsas por lote y ubicación</p>
+          <p>Campaña 2026 · N01 movimientos · N02 control · N03 documentación</p>
         </div>
-        <span className="badge">4 bodegas · sin planilla</span>
+        <nav className="tabs" aria-label="Niveles">
+          <button type="button" className={tab === "n01" ? "on" : ""} onClick={() => setTab("n01")}>
+            N01 Movimientos
+          </button>
+          <button type="button" className={tab === "n02" ? "on" : ""} onClick={() => setTab("n02")}>
+            N02 Control
+          </button>
+          <button type="button" className={tab === "n03" ? "on" : ""} onClick={() => setTab("n03")}>
+            N03 Exportación
+          </button>
+        </nav>
       </header>
 
       <main className="wrap">
-        <div className="grid-2">
-          <section className="card">
-            <h2>Registrar movimiento</h2>
-            <p className="hint">
-              Lenguaje libre, como en el galpón. Ejemplo: «Pasá 80 bolsas del lote 241 Agata de
-              Dos Pancani al galpón». Se interpreta en el servidor, sin OpenAI.
-            </p>
-            <label htmlFor="frase">Voz o texto</label>
-            <textarea
-              id="frase"
-              className={listening ? "listening" : ""}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Dictá o escribí el movimiento…"
-            />
-            <div className="row-actions">
-              <button type="button" className="btn-secondary" onClick={dictate}>
-                {listening ? "Escuchando…" : "Micrófono"}
-              </button>
-              <button type="button" className="btn-primary" onClick={parse} disabled={busy || !text.trim()}>
-                Interpretar
-              </button>
-            </div>
-
-            {draft && (
-              <div className="preview">
-                <strong>¿Confirmás este movimiento?</strong>
-                <dl>
-                  <dt>Tipo</dt>
-                  <dd>{TYPE_LABEL[draft.type] || draft.type}</dd>
-                  <dt>Lote</dt>
-                  <dd>
-                    {draft.lote}
-                    {draft.variedad ? ` · ${draft.variedad}` : ""}
-                  </dd>
-                  <dt>Bolsas</dt>
-                  <dd>{draft.bolsas}</dd>
-                  <dt>Origen</dt>
-                  <dd>{draft.origen ? names[draft.origen] || draft.origen : "—"}</dd>
-                  <dt>Destino</dt>
-                  <dd>{draft.destino ? names[draft.destino] || draft.destino : "—"}</dd>
-                </dl>
+        {tab === "n01" && (
+          <>
+            <div className="grid-2">
+              <section className="card">
+                <h2>Registrar movimiento</h2>
+                <p className="hint">
+                  «Pasá 80 bolsas del lote 241 Agata de Dos Pancani al galpón». Sin OpenAI.
+                </p>
+                <label htmlFor="frase">Voz o texto</label>
+                <textarea
+                  id="frase"
+                  className={listening ? "listening" : ""}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Dictá o escribí el movimiento…"
+                />
                 <div className="row-actions">
-                  <button type="button" className="btn-ok" onClick={confirm} disabled={busy}>
-                    Confirmar
+                  <button type="button" className="btn-secondary" onClick={() => dictate(setText)}>
+                    {listening ? "Escuchando…" : "Micrófono"}
                   </button>
-                  <button type="button" className="btn-danger" onClick={() => setDraft(null)}>
-                    Cancelar
+                  <button type="button" className="btn-primary" onClick={parse} disabled={busy || !text.trim()}>
+                    Interpretar
                   </button>
                 </div>
-              </div>
-            )}
+                {draft && (
+                  <div className="preview">
+                    <strong>¿Confirmás este movimiento?</strong>
+                    <dl>
+                      <dt>Tipo</dt>
+                      <dd>{TYPE_LABEL[draft.type] || draft.type}</dd>
+                      <dt>Lote</dt>
+                      <dd>
+                        {draft.lote}
+                        {draft.variedad ? ` · ${draft.variedad}` : ""}
+                      </dd>
+                      <dt>Bolsas</dt>
+                      <dd>{draft.bolsas}</dd>
+                      <dt>Origen</dt>
+                      <dd>{draft.origen ? names[draft.origen] || draft.origen : "—"}</dd>
+                      <dt>Destino</dt>
+                      <dd>{draft.destino ? names[draft.destino] || draft.destino : "—"}</dd>
+                    </dl>
+                    <div className="row-actions">
+                      <button type="button" className="btn-ok" onClick={confirm} disabled={busy}>
+                        Confirmar
+                      </button>
+                      <button type="button" className="btn-danger" onClick={() => setDraft(null)}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {msg && tab === "n01" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
+              </section>
 
-            {msg && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
-          </section>
-
-          <section className="card">
-            <h2>Stock actual</h2>
-            <p className="hint">Saldos en bolsas. Lo que ves acá es lo que hay, no una versión de Excel.</p>
-            <div className="filter">
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Filtrar por variedad o lote"
-                aria-label="Filtrar stock"
-              />
+              <section className="card">
+                <h2>Stock actual</h2>
+                <p className="hint">Una vista, cuatro ubicaciones.</p>
+                <div className="filter">
+                  <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrar por variedad o lote" />
+                </div>
+                <StockTable stock={stock} rows={rows} />
+              </section>
             </div>
-            <div className="table-wrap">
-              {stock && (
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Variedad</th>
-                      <th>Lote</th>
-                      {stock.locations.map((l) => (
-                        <th key={l.id}>{l.name.replace("Frigorífico ", "")}</th>
-                      ))}
-                      <th>Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r) => (
-                      <tr key={r.code}>
-                        <td>{r.variety}</td>
-                        <td>{r.code}</td>
-                        {stock.locations.map((l) => {
-                          const n = r.byLocation[l.id] ?? 0;
-                          return (
-                            <td key={l.id} className={`num ${n === 0 ? "zero" : ""}`}>
-                              {n || "—"}
-                            </td>
-                          );
-                        })}
-                        <td className="num total">{r.total}</td>
-                      </tr>
+            <History movements={movements} />
+          </>
+        )}
+
+        {tab === "n02" && (
+          <>
+            <section className="card">
+              <h2>Conteo físico vs declarado</h2>
+              <p className="hint">
+                Si no coincide, el sistema propone la causa más probable. La orden de carga no sale si no hay
+                bolsas verificables.
+              </p>
+              <div className="fields">
+                <div>
+                  <label htmlFor="clot">Lote</label>
+                  <select id="clot" value={countLot} onChange={(e) => setCountLot(e.target.value)}>
+                    {lotCodes.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
                     ))}
-                  </tbody>
-                </table>
-              )}
-              {stock && rows.length === 0 && <p className="empty">Ningún lote coincide con el filtro.</p>}
-            </div>
-          </section>
-        </div>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="cloc">Ubicación</label>
+                  <select id="cloc" value={countLoc} onChange={(e) => setCountLoc(e.target.value)}>
+                    {bodegas.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="cbags">Bolsas contadas</label>
+                  <input id="cbags" value={countBags} onChange={(e) => setCountBags(e.target.value)} />
+                </div>
+              </div>
+              <div className="row-actions">
+                <button type="button" className="btn-primary" onClick={doCount} disabled={busy}>
+                  Registrar conteo
+                </button>
+              </div>
+              {hypo && <p className="hypo">{hypo}</p>}
+              {msg && tab === "n02" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
+            </section>
 
-        <section className="card">
-          <h2>Últimos movimientos</h2>
-          <p className="hint">Historial append-only: no se edita la celda, se registra el remito lógico.</p>
-          {movements.length === 0 ? (
-            <p className="empty">Todavía no hay movimientos en esta sesión. El stock inicial viene del seed.</p>
-          ) : (
-            <ul className="history">
-              {movements.map((m) => (
-                <li key={m.id}>
-                  <span className={`pill ${m.type}`}>{TYPE_LABEL[m.type] || m.type}</span>
-                  <span>
-                    Lote {m.lot_code} {m.variety} · {m.bags} bolsas
-                    <br />
-                    <span className="route">
-                      {m.from_name || "—"} → {m.to_name || "—"}
-                    </span>
-                  </span>
-                  <span className="num when">
-                    {new Date(m.created_at).toLocaleString("es-AR")}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+            <section className="card">
+              <h2>Orden de carga</h2>
+              <p className="hint">Usa el mínimo entre stock del sistema y el último conteo de ese lote y lugar.</p>
+              <label htmlFor="lbags">Bolsas a cargar (mismo lote y origen de arriba)</label>
+              <input id="lbags" value={loadBags} onChange={(e) => setLoadBags(e.target.value)} />
+              <div className="row-actions">
+                <button type="button" className="btn-ok" onClick={doCarga} disabled={busy}>
+                  Emitir orden de carga
+                </button>
+              </div>
+            </section>
+
+            <section className="card">
+              <h2>Stock</h2>
+              <StockTable stock={stock} rows={rows} />
+            </section>
+
+            <section className="card">
+              <h2>Conteos</h2>
+              {counts.length === 0 ? (
+                <p className="empty">Todavía no hay conteos.</p>
+              ) : (
+                <ul className="history">
+                  {counts.map((c) => (
+                    <li key={c.id}>
+                      <span className={`pill ${c.declared_bags === c.counted_bags ? "ingreso" : "egreso"}`}>
+                        {c.declared_bags === c.counted_bags ? "OK" : "Desvío"}
+                      </span>
+                      <span>
+                        Lote {c.lot_code} · {c.location_name}: sistema {c.declared_bags} / contado {c.counted_bags}
+                      </span>
+                      <span className="num when">{new Date(c.created_at).toLocaleString("es-AR")}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </>
+        )}
+
+        {tab === "n03" && (
+          <section className="card">
+            <h2>Proforma de exportación</h2>
+            <p className="hint">
+              Cruza el lote (variedad, calibre, bolsa/hilo, procedencia) con el stock verificable. Si no hay
+              bolsas, no se emite.
+            </p>
+            <div className="fields">
+              <div>
+                <label htmlFor="dlot">Lote</label>
+                <select id="dlot" value={docLot} onChange={(e) => setDocLot(e.target.value)}>
+                  {lotCodes.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="dloc">Carga desde</label>
+                <select id="dloc" value={docLoc} onChange={(e) => setDocLoc(e.target.value)}>
+                  {bodegas.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="dbags">Bolsas</label>
+                <input id="dbags" value={docBags} onChange={(e) => setDocBags(e.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="buyer">Comprador</label>
+                <input
+                  id="buyer"
+                  value={buyer}
+                  onChange={(e) => setBuyer(e.target.value)}
+                  onDoubleClick={() => dictate(setBuyer)}
+                />
+              </div>
+              <div>
+                <label htmlFor="country">País / destino</label>
+                <input id="country" value={country} onChange={(e) => setCountry(e.target.value)} />
+              </div>
+            </div>
+            <div className="row-actions">
+              <button type="button" className="btn-secondary" onClick={() => dictate(setBuyer)}>
+                Dictar comprador
+              </button>
+              <button type="button" className="btn-primary" onClick={doProforma} disabled={busy}>
+                Armar proforma
+              </button>
+            </div>
+            {msg && tab === "n03" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
+            {doc && <pre className="doc">{doc}</pre>}
+          </section>
+        )}
       </main>
     </>
+  );
+}
+
+function StockTable({
+  stock,
+  rows,
+}: {
+  stock: StockPayload | null;
+  rows: StockPayload["rows"];
+}) {
+  if (!stock) return null;
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Variedad</th>
+            <th>Lote</th>
+            {stock.locations.map((l) => (
+              <th key={l.id}>{l.name.replace("Frigorífico ", "")}</th>
+            ))}
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.code}>
+              <td>{r.variety}</td>
+              <td>{r.code}</td>
+              {stock.locations.map((l) => {
+                const n = r.byLocation[l.id] ?? 0;
+                return (
+                  <td key={l.id} className={`num ${n === 0 ? "zero" : ""}`}>
+                    {n || "—"}
+                  </td>
+                );
+              })}
+              <td className="num total">{r.total}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {rows.length === 0 && <p className="empty">Ningún lote coincide con el filtro.</p>}
+    </div>
+  );
+}
+
+function History({ movements }: { movements: Movement[] }) {
+  return (
+    <section className="card">
+      <h2>Últimos movimientos</h2>
+      {movements.length === 0 ? (
+        <p className="empty">El stock inicial viene del seed. Los movimientos nuevos aparecen acá.</p>
+      ) : (
+        <ul className="history">
+          {movements.map((m) => (
+            <li key={m.id}>
+              <span className={`pill ${m.type}`}>{TYPE_LABEL[m.type] || m.type}</span>
+              <span>
+                Lote {m.lot_code} {m.variety} · {m.bags} bolsas
+                <br />
+                <span className="route">
+                  {m.from_name || "—"} → {m.to_name || "—"}
+                </span>
+              </span>
+              <span className="num when">{new Date(m.created_at).toLocaleString("es-AR")}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

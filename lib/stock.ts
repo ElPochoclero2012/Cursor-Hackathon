@@ -1,4 +1,4 @@
-import { getDb } from "./db";
+import { getSql, type Sql } from "./db";
 
 export type MovementType = "ingreso" | "transferencia" | "egreso";
 
@@ -20,56 +20,58 @@ export class StockError extends Error {
   }
 }
 
-function locName(id: string) {
-  const row = getDb()
-    .prepare("SELECT name FROM locations WHERE id = ?")
-    .get(id) as { name: string } | undefined;
+async function locName(sql: Sql, id: string) {
+  const row = await sql.get<{ name: string }>("SELECT name FROM locations WHERE id = ?", id);
   return row?.name ?? id;
 }
 
-function lotExists(code: string) {
-  return Boolean(
-    getDb().prepare("SELECT code FROM lots WHERE code = ?").get(code),
-  );
+async function lotExists(sql: Sql, code: string) {
+  const row = await sql.get<{ code: string }>("SELECT code FROM lots WHERE code = ?", code);
+  return Boolean(row);
 }
 
-function bagsAt(lotCode: string, locationId: string): number {
-  const row = getDb()
-    .prepare("SELECT bags FROM stock WHERE lot_code = ? AND location_id = ?")
-    .get(lotCode, locationId) as { bags: number } | undefined;
+async function bagsAt(sql: Sql, lotCode: string, locationId: string): Promise<number> {
+  const row = await sql.get<{ bags: number }>(
+    "SELECT bags FROM stock WHERE lot_code = ? AND location_id = ?",
+    lotCode,
+    locationId,
+  );
   return row?.bags ?? 0;
 }
 
-function addBags(lotCode: string, locationId: string, bags: number) {
-  getDb()
-    .prepare(
-      `INSERT INTO stock (lot_code, location_id, bags) VALUES (?, ?, ?)
-       ON CONFLICT(lot_code, location_id) DO UPDATE SET bags = bags + excluded.bags`,
-    )
-    .run(lotCode, locationId, bags);
+async function addBags(sql: Sql, lotCode: string, locationId: string, bags: number) {
+  await sql.run(
+    `INSERT INTO stock (lot_code, location_id, bags) VALUES (?, ?, ?)
+     ON CONFLICT(lot_code, location_id) DO UPDATE SET bags = bags + excluded.bags`,
+    lotCode,
+    locationId,
+    bags,
+  );
 }
 
-function removeBags(lotCode: string, locationId: string, bags: number) {
-  const have = bagsAt(lotCode, locationId);
+async function removeBags(sql: Sql, lotCode: string, locationId: string, bags: number) {
+  const have = await bagsAt(sql, lotCode, locationId);
   if (have < bags) {
     throw new StockError(
-      `En ${locName(locationId)} el lote ${lotCode} tiene ${have} bolsas; pediste ${bags}.`,
+      `En ${await locName(sql, locationId)} el lote ${lotCode} tiene ${have} bolsas; pediste ${bags}.`,
     );
   }
-  getDb()
-    .prepare(
-      "UPDATE stock SET bags = bags - ? WHERE lot_code = ? AND location_id = ?",
-    )
-    .run(bags, lotCode, locationId);
+  await sql.run(
+    "UPDATE stock SET bags = bags - ? WHERE lot_code = ? AND location_id = ?",
+    bags,
+    lotCode,
+    locationId,
+  );
 }
 
-export function applyMovement(input: MovementInput) {
+export async function applyMovement(input: MovementInput) {
   const bags = Math.trunc(Number(input.bags));
   if (!Number.isFinite(bags) || bags <= 0) {
     throw new StockError("La cantidad de bolsas tiene que ser un número mayor a 0.");
   }
   const lotCode = String(input.lotCode).trim();
-  if (!lotExists(lotCode)) {
+  const root = await getSql();
+  if (!(await lotExists(root, lotCode))) {
     throw new StockError(`No existe el lote ${lotCode} en el catálogo.`);
   }
 
@@ -89,27 +91,25 @@ export function applyMovement(input: MovementInput) {
     throw new StockError("Un egreso necesita origen.");
   }
 
-  const db = getDb();
-  db.exec("BEGIN IMMEDIATE");
-  try {
+  await root.withTransaction(async (sql) => {
     if (input.type === "ingreso") {
-      addBags(lotCode, toId!, bags);
+      await addBags(sql, lotCode, toId!, bags);
     } else if (input.type === "transferencia") {
-      removeBags(lotCode, fromId!, bags);
-      addBags(lotCode, toId!, bags);
+      await removeBags(sql, lotCode, fromId!, bags);
+      await addBags(sql, lotCode, toId!, bags);
     } else {
-      removeBags(lotCode, fromId!, bags);
+      await removeBags(sql, lotCode, fromId!, bags);
     }
 
-    const kgRow = db
-      .prepare("SELECT kg_per_bag FROM lots WHERE code = ?")
-      .get(lotCode) as { kg_per_bag: number | null };
+    const kgRow = await sql.get<{ kg_per_bag: number | null }>(
+      "SELECT kg_per_bag FROM lots WHERE code = ?",
+      lotCode,
+    );
     const kg = kgRow?.kg_per_bag ? kgRow.kg_per_bag * bags : null;
 
-    db.prepare(
+    await sql.run(
       `INSERT INTO movements (type, lot_code, bags, kg, from_id, to_id, remito, notes, raw_text, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
       input.type,
       lotCode,
       bags,
@@ -121,11 +121,7 @@ export function applyMovement(input: MovementInput) {
       input.rawText ?? null,
       new Date().toISOString(),
     );
-    db.exec("COMMIT");
-  } catch (err) {
-    db.exec("ROLLBACK");
-    throw err;
-  }
+  });
 }
 
 export type StockRow = {
@@ -135,31 +131,28 @@ export type StockRow = {
   total: number;
 };
 
-export function listStock(): { locations: { id: string; name: string }[]; rows: StockRow[] } {
-  const db = getDb();
-  const locations = db
-    .prepare(
-      "SELECT id, name FROM locations WHERE kind = 'bodega' ORDER BY sort",
-    )
-    .all() as { id: string; name: string }[];
-
-  const lots = db
-    .prepare("SELECT code, variety FROM lots ORDER BY variety, code")
-    .all() as { code: string; variety: string }[];
-
-  const balances = db
-    .prepare(
-      `SELECT s.lot_code, s.location_id, s.bags
-       FROM stock s
-       JOIN locations l ON l.id = s.location_id
-       WHERE l.kind = 'bodega' AND s.bags > 0`,
-    )
-    .all() as { lot_code: string; location_id: string; bags: number }[];
+export async function listStock(): Promise<{
+  locations: { id: string; name: string }[];
+  rows: StockRow[];
+}> {
+  const db = await getSql();
+  const locations = await db.all<{ id: string; name: string }>(
+    "SELECT id, name FROM locations WHERE kind = 'bodega' ORDER BY sort",
+  );
+  const lots = await db.all<{ code: string; variety: string }>(
+    "SELECT code, variety FROM lots ORDER BY variety, code",
+  );
+  const balances = await db.all<{ lot_code: string; location_id: string; bags: number }>(
+    `SELECT s.lot_code, s.location_id, s.bags
+     FROM stock s
+     JOIN locations l ON l.id = s.location_id
+     WHERE l.kind = 'bodega' AND s.bags > 0`,
+  );
 
   const map = new Map<string, Record<string, number>>();
   for (const b of balances) {
     if (!map.has(b.lot_code)) map.set(b.lot_code, {});
-    map.get(b.lot_code)![b.location_id] = b.bags;
+    map.get(b.lot_code)![b.location_id] = Number(b.bags);
   }
 
   const rows: StockRow[] = lots
@@ -178,17 +171,17 @@ export function listStock(): { locations: { id: string; name: string }[]; rows: 
   return { locations, rows };
 }
 
-export function listMovements(limit = 30) {
-  return getDb()
-    .prepare(
-      `SELECT m.id, m.type, m.lot_code, l.variety, m.bags, m.kg, m.from_id, m.to_id,
-              fo.name AS from_name, td.name AS to_name, m.remito, m.notes, m.raw_text, m.created_at
-       FROM movements m
-       JOIN lots l ON l.code = m.lot_code
-       LEFT JOIN locations fo ON fo.id = m.from_id
-       LEFT JOIN locations td ON td.id = m.to_id
-       ORDER BY m.id DESC
-       LIMIT ?`,
-    )
-    .all(limit);
+export async function listMovements(limit = 30) {
+  const db = await getSql();
+  return db.all(
+    `SELECT m.id, m.type, m.lot_code, l.variety, m.bags, m.kg, m.from_id, m.to_id,
+            fo.name AS from_name, td.name AS to_name, m.remito, m.notes, m.raw_text, m.created_at
+     FROM movements m
+     JOIN lots l ON l.code = m.lot_code
+     LEFT JOIN locations fo ON fo.id = m.from_id
+     LEFT JOIN locations td ON td.id = m.to_id
+     ORDER BY m.id DESC
+     LIMIT ?`,
+    limit,
+  );
 }

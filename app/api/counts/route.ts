@@ -1,0 +1,26 @@
+import { NextResponse } from "next/server";
+import { listCounts, recordCount } from "@/lib/count";
+import { StockError } from "@/lib/stock";
+
+export const runtime = "nodejs";
+
+export async function GET() {
+  return NextResponse.json(await listCounts());
+}
+
+export async function POST(req: Request) {
+  const body = (await req.json()) as { lote?: string; origen?: string; bolsas?: number };
+  try {
+    const result = await recordCount({
+      lot: String(body.lote ?? ""),
+      locationId: String(body.origen ?? ""),
+      counted: Number(body.bolsas),
+    });
+    return NextResponse.json({ ...result, counts: await listCounts() });
+  } catch (err) {
+    if (err instanceof StockError) {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
+    throw err;
+  }
+}

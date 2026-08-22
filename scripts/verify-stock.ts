@@ -7,13 +7,13 @@ const dir = mkdtempSync(join(tmpdir(), "stock-n01-"));
 process.env.STOCK_DB_PATH = join(dir, "test.db");
 
 const { applyMovement, listStock, StockError } = await import("../lib/stock.ts");
-const { getDb, closeDb } = await import("../lib/db.ts");
+const { getSql, closeDb } = await import("../lib/db.ts");
 const { parseWithRules } = await import("../lib/parse.ts");
 const { getCatalog } = await import("../lib/catalog.ts");
 
-getDb();
+await getSql();
 
-applyMovement({
+await applyMovement({
   type: "ingreso",
   lotCode: "241",
   bags: 10,
@@ -21,7 +21,7 @@ applyMovement({
   toId: "galpon",
 });
 
-applyMovement({
+await applyMovement({
   type: "transferencia",
   lotCode: "241",
   bags: 80,
@@ -31,7 +31,7 @@ applyMovement({
 
 let blocked = false;
 try {
-  applyMovement({
+  await applyMovement({
     type: "egreso",
     lotCode: "241",
     bags: 600,
@@ -45,7 +45,7 @@ assert.equal(blocked, true, "egreso de 600 debía rechazarse");
 
 const parsed = parseWithRules(
   "Pasá 80 bolsas del lote 241 Agata de Dos Pancani al galpón",
-  getCatalog(),
+  await getCatalog(),
 );
 assert.ok(!("error" in parsed));
 assert.equal(parsed.lote, "241");
@@ -54,11 +54,39 @@ assert.equal(parsed.origen, "dospanca");
 assert.equal(parsed.destino, "galpon");
 assert.equal(parsed.type, "transferencia");
 
-const stock = listStock();
+const stock = await listStock();
 const row = stock.rows.find((r) => r.code === "241");
 assert.ok(row);
 assert.equal(row.byLocation.dospanca, 320);
 assert.equal(row.byLocation.galpon, 170);
+
+const { recordCount } = await import("../lib/count.ts");
+const { explainGap } = await import("../lib/hypothesis.ts");
+const gap = explainGap({
+  lot: "241",
+  locationId: "dospanca",
+  locationName: "Frigorífico Dos Pancani",
+  declared: 400,
+  counted: 320,
+  moves: [
+    {
+      type: "transferencia",
+      lot_code: "241",
+      bags: 80,
+      from_id: "dospanca",
+      to_id: "galpon",
+      from_name: "Frigorífico Dos Pancani",
+      to_name: "Galpón",
+      created_at: new Date().toISOString(),
+    },
+  ],
+});
+assert.equal(gap.ok, false);
+assert.match(gap.hypothesis, /no se registró la llegada/);
+
+const counted = await recordCount({ lot: "241", locationId: "dospanca", counted: 200 });
+assert.equal(counted.ok, false);
+assert.ok(counted.hypothesis.includes("Faltan"));
 
 closeDb();
 rmSync(dir, { recursive: true, force: true });

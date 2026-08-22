@@ -31,6 +31,10 @@ Unidad que manda: **bolsas**. Los kg se calculan si el lote tiene `kg_per_bag`.
 4. Confirmar → `POST /api/movements` → `applyMovement` en una transacción SQLite (`BEGIN IMMEDIATE`).
 5. Si el origen no tiene bolsas suficientes: HTTP 409 y un mensaje en español. El stock no cambia.
 
+**N02:** `POST /api/counts` compara conteo vs saldo y arma una hipótesis (`lib/hypothesis.ts`). `POST /api/carga` no emite si no hay bolsas verificables (mínimo entre sistema y último conteo).
+
+**N03:** `POST /api/proforma` rellena documentación con trazabilidad del lote (`data/seed.json` → `trace`) y el mismo tope de stock.
+
 La UI **no calcula** saldos; solo muestra lo que devuelve el API.
 
 ## API
