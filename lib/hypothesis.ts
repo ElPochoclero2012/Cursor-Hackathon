@@ -40,24 +40,29 @@ export function explainGap(input: {
 
   if (delta < 0) {
     const falta = -delta;
-    if (out?.type === "transferencia") {
+    const matchBags = related.find(
+      (m) => m.from_id === input.locationId && Number(m.bags) === falta,
+    );
+    const hint = matchBags ?? out;
+    if (hint?.type === "transferencia") {
+      const exacto = Number(hint.bags) === falta ? " (misma cantidad que el faltante)" : "";
       return {
         ok: false,
         delta,
-        hypothesis: `Faltan ${falta} bolsas del lote ${input.lot} en ${input.locationName} (sistema ${input.declared}, conteo ${input.counted}). Lo más probable: el movimiento del ${when(out.created_at)} hacia ${out.to_name || "destino"} se cargó en origen y no se registró la llegada.`,
+        hypothesis: `Faltan ${falta} bolsas del lote ${input.lot} en ${input.locationName} (sistema ${input.declared}, conteo ${input.counted}). Lo más probable: el envío a frío/galpón del ${when(hint.created_at)} hacia ${hint.to_name || "destino"}${exacto} se cargó en origen y no se registró la llegada.`,
       };
     }
-    if (out?.type === "egreso") {
+    if (hint?.type === "egreso") {
       return {
         ok: false,
         delta,
-        hypothesis: `Faltan ${falta} bolsas del lote ${input.lot} en ${input.locationName}. Lo más probable: un retiro o entrega (${out.bags} bolsas el ${when(out.created_at)}) no quedó reflejado en esta ubicación.`,
+        hypothesis: `Faltan ${falta} bolsas del lote ${input.lot} en ${input.locationName}. Lo más probable: un retiro o entrega (${hint.bags} bolsas el ${when(hint.created_at)}) no quedó en esta ubicación — el típico error de la planilla al momento de cargar.`,
       };
     }
     return {
       ok: false,
       delta,
-      hypothesis: `Faltan ${falta} bolsas del lote ${input.lot} en ${input.locationName} (declarado ${input.declared}, contado ${input.counted}). Hipótesis: salida o transferencia no registrada.`,
+      hypothesis: `Faltan ${falta} bolsas del lote ${input.lot} en ${input.locationName} (declarado ${input.declared}, contado ${input.counted}). Hipótesis: salida o transferencia no registrada, o mercadería en otro frío (Cecive/Belmonte/Sasula) mal anotada.`,
     };
   }
 

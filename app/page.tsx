@@ -1,6 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+<<<<<<< HEAD
+=======
+
+type Tab = "movimientos" | "control" | "exportacion";
+>>>>>>> c1cbcba71a70cddf225b0e67a3aa143ea9e0e918
 
 type StockPayload = {
   locations: { id: string; name: string }[];
@@ -30,6 +35,7 @@ type Draft = {
   bolsas: number;
   origen?: string | null;
   destino?: string | null;
+  source?: string;
 };
 
 type CountRow = {
@@ -43,14 +49,47 @@ type CountRow = {
   created_at: string;
 };
 
+type ProformaDoc = {
+  body: string;
+  today: string;
+  buyer: string;
+  country: string;
+  from: string;
+  variety: string;
+  lot: string;
+  bags: number;
+  kg: number | null;
+  trace: {
+    campo?: string;
+    categoria?: string;
+    calibre?: string;
+    bolsa?: string;
+    hilo?: string;
+  };
+};
+
+type ProformaRow = {
+  id: number;
+  lot_code: string;
+  bags: number;
+  buyer: string;
+  dest_country: string;
+  created_at: string;
+};
+
 const TYPE_LABEL: Record<string, string> = {
   transferencia: "Transferencia",
   ingreso: "Ingreso",
   egreso: "Egreso",
 };
 
+const DEMO_PHRASES = [
+  "Pasá 80 bolsas del lote 241 Agata de Dos Pancani al galpón.",
+  "Retirá 600 bolsas del lote 241 de Pancani.",
+];
+
 export default function Page() {
-  const [tab, setTab] = useState<"n01" | "n02" | "n03">("n01");
+  const [tab, setTab] = useState<Tab>("movimientos");
   const [stock, setStock] = useState<StockPayload | null>(null);
   const [movements, setMovements] = useState<Movement[]>([]);
   const [counts, setCounts] = useState<CountRow[]>([]);
@@ -61,9 +100,15 @@ export default function Page() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [groq, setGroq] = useState(false);
+<<<<<<< HEAD
   const recRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
+=======
+  const wantMic = useRef(false);
+  const recRef = useRef<SpeechRecognition | null>(null);
+  const spokenRef = useRef("");
+>>>>>>> c1cbcba71a70cddf225b0e67a3aa143ea9e0e918
   const [names, setNames] = useState<Record<string, string>>({});
   const [countLot, setCountLot] = useState("241");
   const [countLoc, setCountLoc] = useState("dospanca");
@@ -75,9 +120,11 @@ export default function Page() {
   const [docBags, setDocBags] = useState("200");
   const [buyer, setBuyer] = useState("Parmentier");
   const [country, setCountry] = useState("Brasil");
-  const [doc, setDoc] = useState<string | null>(null);
+  const [doc, setDoc] = useState<ProformaDoc | null>(null);
+  const [proformas, setProformas] = useState<ProformaRow[]>([]);
 
   const load = useCallback(async () => {
+<<<<<<< HEAD
     const json = (url: string) => fetch(url).then((r) => r.json()).catch(() => null);
     const [s, m, c, k, t] = await Promise.all([
       json("/api/stock"),
@@ -90,14 +137,36 @@ export default function Page() {
     if (Array.isArray(m)) setMovements(m);
     if (Array.isArray(k)) setCounts(k);
     setGroq(Boolean(t?.groq));
+=======
+    const [s, m, c, k, p] = await Promise.all([
+      fetch("/api/stock").then((r) => r.json()),
+      fetch("/api/movements").then((r) => r.json()),
+      fetch("/api/catalog").then((r) => r.json()),
+      fetch("/api/counts").then((r) => r.json()),
+      fetch("/api/parse").then((r) => r.json()),
+    ]);
+    setStock(s);
+    setMovements(m);
+    setCounts(k);
+    setGroq(Boolean(p.groq));
+>>>>>>> c1cbcba71a70cddf225b0e67a3aa143ea9e0e918
     const map: Record<string, string> = {};
     for (const loc of (c?.locations ?? []) as { id: string; name: string }[]) map[loc.id] = loc.name;
     setNames(map);
   }, []);
 
+  const loadProformas = useCallback(async () => {
+    const list = await fetch("/api/proforma").then((r) => r.json());
+    setProformas(Array.isArray(list) ? list : []);
+  }, []);
+
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (tab === "exportacion") loadProformas();
+  }, [tab, loadProformas]);
 
   const bodegas = useMemo(
     () => (stock?.locations ?? []).map((l) => ({ id: l.id, name: l.name })),
@@ -162,6 +231,7 @@ export default function Page() {
     }
   }
 
+<<<<<<< HEAD
   function stopStream() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
@@ -236,6 +306,87 @@ export default function Page() {
     } catch {
       stopDictate();
       setMsg({ kind: "error", text: "Chrome bloqueó el micrófono. Candado de la URL → Permitir." });
+=======
+  function stopDictate() {
+    wantMic.current = false;
+    try {
+      recRef.current?.stop();
+    } catch {
+      /* noop */
+    }
+    recRef.current = null;
+    setListening(false);
+  }
+
+  function dictate(into: (s: string) => void) {
+    if (listening) {
+      stopDictate();
+      return;
+    }
+    const SR =
+      typeof window !== "undefined" &&
+      ((window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognition }).webkitSpeechRecognition ||
+        (window as unknown as { SpeechRecognition?: new () => SpeechRecognition }).SpeechRecognition);
+    if (!SR) {
+      setMsg({
+        kind: "error",
+        text: "El dictado del navegador pide Chrome o Edge. En el evento: Wispr Flow (ref.wisprflow.ai/cursor) escribe en el recuadro y después Interpretar.",
+      });
+      return;
+    }
+    if (!window.isSecureContext) {
+      setMsg({
+        kind: "error",
+        text: "El micrófono solo anda en https o localhost. Usá la URL de Vercel o Chrome en http://localhost:3000.",
+      });
+      return;
+    }
+    spokenRef.current = "";
+    const rec = new SR();
+    rec.lang = "es-AR";
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.maxAlternatives = 3;
+    recRef.current = rec;
+    wantMic.current = true;
+    rec.onstart = () => setListening(true);
+    rec.onend = () => {
+      if (wantMic.current) {
+        try {
+          rec.start();
+        } catch {
+          setListening(false);
+        }
+      } else {
+        setListening(false);
+      }
+    };
+    rec.onerror = (ev: { error?: string }) => {
+      if (ev.error === "no-speech" || ev.error === "aborted") return;
+      stopDictate();
+      const hint =
+        ev.error === "not-allowed"
+          ? "Chrome bloqueó el micrófono. Permiso del candado → Permitir."
+          : "Dictado inestable. Dejá el texto y usá Interpretar (Groq corrige errores).";
+      setMsg({ kind: "error", text: hint });
+    };
+    rec.onresult = (ev: SpeechRecognitionEvent) => {
+      let interim = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) {
+          spokenRef.current = `${spokenRef.current} ${t}`.trim();
+        } else {
+          interim += t;
+        }
+      }
+      into(`${spokenRef.current} ${interim}`.trim());
+    };
+    try {
+      rec.start();
+    } catch {
+      setMsg({ kind: "error", text: "No se pudo iniciar el micrófono. Probá de nuevo en Chrome." });
+>>>>>>> c1cbcba71a70cddf225b0e67a3aa143ea9e0e918
     }
   }
 
@@ -304,8 +455,9 @@ export default function Page() {
         setMsg({ kind: "error", text: data.error || "No se armó la proforma." });
         return;
       }
-      setDoc(data.body);
+      setDoc(data);
       setMsg({ kind: "ok", text: "Proforma armada con trazabilidad del lote." });
+      await loadProformas();
     } finally {
       setBusy(false);
     }
@@ -316,30 +468,46 @@ export default function Page() {
       <header className="app-header">
         <div>
           <h1>Stock de semilla</h1>
-          <p>Campaña 2026 · N01 movimientos · N02 control · N03 documentación</p>
+          <p>Campaña 2026 · una fuente de verdad por lote y ubicación</p>
         </div>
-        <nav className="tabs" aria-label="Niveles">
-          <button type="button" className={tab === "n01" ? "on" : ""} onClick={() => setTab("n01")}>
-            N01 Movimientos
-          </button>
-          <button type="button" className={tab === "n02" ? "on" : ""} onClick={() => setTab("n02")}>
-            N02 Control
-          </button>
-          <button type="button" className={tab === "n03" ? "on" : ""} onClick={() => setTab("n03")}>
-            N03 Exportación
-          </button>
+        <nav className="tabs" aria-label="Módulos">
+          {(
+            [
+              ["movimientos", "Movimientos"],
+              ["control", "Control"],
+              ["exportacion", "Exportación"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={tab === id ? "on" : ""}
+              aria-current={tab === id ? "page" : undefined}
+              onClick={() => setTab(id)}
+            >
+              {label}
+            </button>
+          ))}
         </nav>
       </header>
 
       <main className="wrap">
-        {tab === "n01" && (
+        {tab === "movimientos" && (
           <>
             <div className="grid-2">
               <section className="card">
                 <h2>Registrar movimiento</h2>
                 <p className="hint">
+<<<<<<< HEAD
                   «Pasá 80 bolsas del lote 241 Agata de Dos Pancani al galpón». Micrófono: clic, hablá, clic otra
                   vez para transcribir (Groq Whisper, no el dictado de Chrome).
+=======
+                  {groq
+                    ? "Interpretar usa Groq (gratis) y aguanta dictado sucio: pancani, ochenta, ágata."
+                    : "Sin GROQ_API_KEY el parseo es por reglas. Cargá la clave en Vercel para corregir error humano."}{" "}
+                  Micrófono: Chrome/Edge, https. Clic otra vez para cortar. Si se cae, dictá con Wispr Flow del
+                  hackathon y pegá acá.
+>>>>>>> c1cbcba71a70cddf225b0e67a3aa143ea9e0e918
                 </p>
                 <label htmlFor="frase">Voz o texto</label>
                 <textarea
@@ -349,9 +517,20 @@ export default function Page() {
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Dictá o escribí el movimiento…"
                 />
+                <div className="chips" aria-label="Frases de ejemplo">
+                  {DEMO_PHRASES.map((p) => (
+                    <button key={p} type="button" className="chip" onClick={() => setText(p)}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
                 <div className="row-actions">
                   <button type="button" className="btn-secondary" onClick={() => dictate(setText)}>
+<<<<<<< HEAD
                     {listening ? "Cortar y transcribir" : "Micrófono"}
+=======
+                    {listening ? "Cortar micrófono" : "Micrófono"}
+>>>>>>> c1cbcba71a70cddf225b0e67a3aa143ea9e0e918
                   </button>
                   <button type="button" className="btn-primary" onClick={parse} disabled={busy || !text.trim()}>
                     Interpretar
@@ -362,7 +541,10 @@ export default function Page() {
                     <strong>¿Confirmás este movimiento?</strong>
                     <dl>
                       <dt>Tipo</dt>
-                      <dd>{TYPE_LABEL[draft.type] || draft.type}</dd>
+                      <dd>
+                        {TYPE_LABEL[draft.type] || draft.type}
+                        {draft.source === "groq" ? " · IA Groq" : " · reglas"}
+                      </dd>
                       <dt>Lote</dt>
                       <dd>
                         {draft.lote}
@@ -385,7 +567,7 @@ export default function Page() {
                     </div>
                   </div>
                 )}
-                {msg && tab === "n01" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
+                {msg && tab === "movimientos" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
               </section>
 
               <section className="card">
@@ -401,60 +583,62 @@ export default function Page() {
           </>
         )}
 
-        {tab === "n02" && (
+        {tab === "control" && (
           <>
-            <section className="card">
-              <h2>Conteo físico vs declarado</h2>
-              <p className="hint">
-                Si no coincide, el sistema propone la causa más probable. La orden de carga no sale si no hay
-                bolsas verificables.
-              </p>
-              <div className="fields">
-                <div>
-                  <label htmlFor="clot">Lote</label>
-                  <select id="clot" value={countLot} onChange={(e) => setCountLot(e.target.value)}>
-                    {lotCodes.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+            <div className="grid-2 even">
+              <section className="card">
+                <h2>Conteo físico vs declarado</h2>
+                <p className="hint">Si no coincide, el sistema propone la causa más probable.</p>
+                <div className="fields">
+                  <div>
+                    <label htmlFor="clot">Lote</label>
+                    <select id="clot" value={countLot} onChange={(e) => setCountLot(e.target.value)}>
+                      {lotCodes.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="cloc">Ubicación</label>
+                    <select id="cloc" value={countLoc} onChange={(e) => setCountLoc(e.target.value)}>
+                      {bodegas.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="cbags">Bolsas contadas</label>
+                    <input id="cbags" value={countBags} onChange={(e) => setCountBags(e.target.value)} />
+                  </div>
                 </div>
-                <div>
-                  <label htmlFor="cloc">Ubicación</label>
-                  <select id="cloc" value={countLoc} onChange={(e) => setCountLoc(e.target.value)}>
-                    {bodegas.map((l) => (
-                      <option key={l.id} value={l.id}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
+                <div className="row-actions">
+                  <button type="button" className="btn-primary" onClick={doCount} disabled={busy}>
+                    Registrar conteo
+                  </button>
                 </div>
-                <div>
-                  <label htmlFor="cbags">Bolsas contadas</label>
-                  <input id="cbags" value={countBags} onChange={(e) => setCountBags(e.target.value)} />
-                </div>
-              </div>
-              <div className="row-actions">
-                <button type="button" className="btn-primary" onClick={doCount} disabled={busy}>
-                  Registrar conteo
-                </button>
-              </div>
-              {hypo && <p className="hypo">{hypo}</p>}
-              {msg && tab === "n02" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
-            </section>
+                {hypo && <p className="hypo">{hypo}</p>}
+                {msg && tab === "control" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
+              </section>
 
-            <section className="card">
-              <h2>Orden de carga</h2>
-              <p className="hint">Usa el mínimo entre stock del sistema y el último conteo de ese lote y lugar.</p>
-              <label htmlFor="lbags">Bolsas a cargar (mismo lote y origen de arriba)</label>
-              <input id="lbags" value={loadBags} onChange={(e) => setLoadBags(e.target.value)} />
-              <div className="row-actions">
-                <button type="button" className="btn-ok" onClick={doCarga} disabled={busy}>
-                  Emitir orden de carga
-                </button>
-              </div>
-            </section>
+              <section className="card">
+                <h2>Orden de carga</h2>
+                <p className="hint">
+                  Mismo lote y ubicación del conteo. Usa el mínimo entre el sistema y el último conteo. No sale si no
+                  hay bolsas verificables.
+                </p>
+                <label htmlFor="lbags">Bolsas a cargar</label>
+                <input id="lbags" value={loadBags} onChange={(e) => setLoadBags(e.target.value)} />
+                <div className="row-actions">
+                  <button type="button" className="btn-ok" onClick={doCarga} disabled={busy}>
+                    Emitir orden de carga
+                  </button>
+                </div>
+              </section>
+            </div>
 
             <section className="card">
               <h2>Stock</h2>
@@ -464,86 +648,195 @@ export default function Page() {
             <section className="card">
               <h2>Conteos</h2>
               {counts.length === 0 ? (
-                <p className="empty">Todavía no hay conteos.</p>
+                <p className="empty">Todavía no hay conteos. Registrá el primero para comparar piso vs sistema.</p>
               ) : (
-                <ul className="history">
-                  {counts.map((c) => (
-                    <li key={c.id}>
-                      <span className={`pill ${c.declared_bags === c.counted_bags ? "ingreso" : "egreso"}`}>
-                        {c.declared_bags === c.counted_bags ? "OK" : "Desvío"}
-                      </span>
-                      <span>
-                        Lote {c.lot_code} · {c.location_name}: sistema {c.declared_bags} / contado {c.counted_bags}
-                      </span>
-                      <span className="num when">{new Date(c.created_at).toLocaleString("es-AR")}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Lote</th>
+                        <th>Ubicación</th>
+                        <th>Sistema</th>
+                        <th>Contado</th>
+                        <th>Estado</th>
+                        <th>Fecha</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {counts.map((c) => {
+                        const ok = c.declared_bags === c.counted_bags;
+                        return (
+                          <tr key={c.id}>
+                            <td>
+                              {c.lot_code} {c.variety}
+                            </td>
+                            <td>{c.location_name}</td>
+                            <td className="num">{c.declared_bags}</td>
+                            <td className="num">{c.counted_bags}</td>
+                            <td>
+                              <span className={`pill ${ok ? "ingreso" : "egreso"}`}>{ok ? "OK" : "Desvío"}</span>
+                            </td>
+                            <td className="num when">{new Date(c.created_at).toLocaleString("es-AR")}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </section>
           </>
         )}
 
-        {tab === "n03" && (
-          <section className="card">
-            <h2>Proforma de exportación</h2>
-            <p className="hint">
-              Cruza el lote (variedad, calibre, bolsa/hilo, procedencia) con el stock verificable. Si no hay
-              bolsas, no se emite.
-            </p>
-            <div className="fields">
-              <div>
-                <label htmlFor="dlot">Lote</label>
-                <select id="dlot" value={docLot} onChange={(e) => setDocLot(e.target.value)}>
-                  {lotCodes.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+        {tab === "exportacion" && (
+          <>
+            <section className="card">
+              <h2>Proforma de exportación</h2>
+              <p className="hint">
+                Cruza el lote (variedad, calibre, bolsa/hilo, procedencia) con el stock verificable. Si no hay bolsas, no
+                se emite.
+              </p>
+              <div className="fields fields-export">
+                <div>
+                  <label htmlFor="dlot">Lote</label>
+                  <select id="dlot" value={docLot} onChange={(e) => setDocLot(e.target.value)}>
+                    {lotCodes.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="dloc">Carga desde</label>
+                  <select id="dloc" value={docLoc} onChange={(e) => setDocLoc(e.target.value)}>
+                    {bodegas.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="dbags">Bolsas</label>
+                  <input id="dbags" value={docBags} onChange={(e) => setDocBags(e.target.value)} />
+                </div>
+                <div>
+                  <label htmlFor="buyer">Comprador</label>
+                  <input
+                    id="buyer"
+                    value={buyer}
+                    onChange={(e) => setBuyer(e.target.value)}
+                    className={listening ? "listening" : ""}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="country">País / destino</label>
+                  <input id="country" value={country} onChange={(e) => setCountry(e.target.value)} />
+                </div>
               </div>
-              <div>
-                <label htmlFor="dloc">Carga desde</label>
-                <select id="dloc" value={docLoc} onChange={(e) => setDocLoc(e.target.value)}>
-                  {bodegas.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
+              <div className="row-actions">
+                <button type="button" className="btn-secondary" onClick={() => dictate(setBuyer)}>
+                  {listening ? "Escuchando…" : "Dictar comprador"}
+                </button>
+                <button type="button" className="btn-primary" onClick={doProforma} disabled={busy}>
+                  Armar proforma
+                </button>
               </div>
-              <div>
-                <label htmlFor="dbags">Bolsas</label>
-                <input id="dbags" value={docBags} onChange={(e) => setDocBags(e.target.value)} />
-              </div>
-              <div>
-                <label htmlFor="buyer">Comprador</label>
-                <input
-                  id="buyer"
-                  value={buyer}
-                  onChange={(e) => setBuyer(e.target.value)}
-                  onDoubleClick={() => dictate(setBuyer)}
-                />
-              </div>
-              <div>
-                <label htmlFor="country">País / destino</label>
-                <input id="country" value={country} onChange={(e) => setCountry(e.target.value)} />
-              </div>
-            </div>
-            <div className="row-actions">
-              <button type="button" className="btn-secondary" onClick={() => dictate(setBuyer)}>
-                Dictar comprador
-              </button>
-              <button type="button" className="btn-primary" onClick={doProforma} disabled={busy}>
-                Armar proforma
-              </button>
-            </div>
-            {msg && tab === "n03" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
-            {doc && <pre className="doc">{doc}</pre>}
-          </section>
+              {msg && tab === "exportacion" && <div className={`msg ${msg.kind}`}>{msg.text}</div>}
+            </section>
+
+            {doc && <ProformaCard doc={doc} />}
+
+            <section className="card">
+              <h2>Proformas emitidas</h2>
+              {proformas.length === 0 ? (
+                <p className="empty">Todavía no hay proformas. Armá una con stock verificable.</p>
+              ) : (
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Lote</th>
+                        <th>Comprador</th>
+                        <th>Destino</th>
+                        <th>Bolsas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {proformas.map((p) => (
+                        <tr key={p.id}>
+                          <td className="num when">{new Date(p.created_at).toLocaleString("es-AR")}</td>
+                          <td>{p.lot_code}</td>
+                          <td>{p.buyer}</td>
+                          <td>{p.dest_country}</td>
+                          <td className="num">{p.bags}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </>
         )}
       </main>
     </>
+  );
+}
+
+function ProformaCard({ doc }: { doc: ProformaDoc }) {
+  const tr = doc.trace ?? {};
+  return (
+    <section className="card proforma">
+      <header className="proforma-head">
+        <h2>Proforma / documentación de exportación</h2>
+        <p>Semilla para siembra · {doc.today}</p>
+      </header>
+      <div className="proforma-grid">
+        <div>
+          <h3>Comprador</h3>
+          <dl>
+            <dt>Nombre</dt>
+            <dd>{doc.buyer}</dd>
+            <dt>País / destino</dt>
+            <dd>{doc.country}</dd>
+          </dl>
+        </div>
+        <div>
+          <h3>Carga</h3>
+          <dl>
+            <dt>Lugar</dt>
+            <dd>{doc.from}</dd>
+            <dt>Bolsas</dt>
+            <dd>{doc.bags}</dd>
+            <dt>Kilogramos</dt>
+            <dd>{doc.kg ? `${doc.kg.toLocaleString("es-AR")} (est.)` : "Según pesada"}</dd>
+          </dl>
+        </div>
+        <div>
+          <h3>Lote</h3>
+          <dl>
+            <dt>Variedad</dt>
+            <dd>
+              {doc.variety} · {doc.lot}
+            </dd>
+            <dt>Categoría / calibre</dt>
+            <dd>
+              {tr.categoria || "semilla"} · {tr.calibre || "según planta"}
+            </dd>
+            <dt>Identificación</dt>
+            <dd>
+              bolsa {tr.bolsa || "s/d"} / hilo {tr.hilo || "s/d"}
+            </dd>
+            <dt>Procedencia</dt>
+            <dd>{tr.campo || "Santa Ana"}</dd>
+          </dl>
+        </div>
+      </div>
+      <p className="proforma-foot">Campos cruzados con trazabilidad del lote. Completar DTV / SENASA en destino.</p>
+    </section>
   );
 }
 
@@ -554,7 +847,7 @@ function StockTable({
   stock: StockPayload | null;
   rows: StockPayload["rows"];
 }) {
-  if (!stock) return null;
+  if (!stock) return <p className="empty">Cargando saldos…</p>;
   return (
     <div className="table-wrap">
       <table>
@@ -616,4 +909,26 @@ function History({ movements }: { movements: Movement[] }) {
       )}
     </section>
   );
+<<<<<<< HEAD
 }
+=======
+}
+
+type SpeechRecognition = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onstart: () => void;
+  onend: () => void;
+  onerror: (ev: { error?: string }) => void;
+  onresult: (ev: SpeechRecognitionEvent) => void;
+  start: () => void;
+  stop: () => void;
+};
+
+type SpeechRecognitionEvent = {
+  resultIndex: number;
+  results: Array<{ isFinal: boolean; 0: { transcript: string } }>;
+};
+>>>>>>> c1cbcba71a70cddf225b0e67a3aa143ea9e0e918

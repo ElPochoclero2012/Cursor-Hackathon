@@ -1,41 +1,47 @@
 # Deploy gratis (Vercel + Turso)
 
-Render cobró o pidió plan pago: no lo usamos. Para **testear y mostrar la demo** alcanza el plan Hobby de Vercel (gratis) y una base **Turso** (SQLite en la nube, también gratis). El parseo sigue sin OpenAI.
+Plan Hobby de Vercel + una base Turso (SQLite en la nube). Parseo local, sin OpenAI. Node **22+**.
 
-No uses Netlify para esto: cada función serverless perdería el archivo SQLite. Turso es el mismo SQL, compartido entre requests.
+No uses Netlify: cada función perdería el archivo SQLite. Turso comparte el mismo SQL entre requests.
 
-## 1. Base Turso (2 minutos)
+## Checklist
 
-1. Entrá a https://turso.tech y creá cuenta (GitHub).
-2. En el dashboard: **Create Database** (región cercana, plan free).
-3. Copiá:
+1. **Turso** (2 min) — https://turso.tech (cuenta con GitHub) → Create Database (plan free).
+2. Copiá:
    - `TURSO_DATABASE_URL` (empieza con `libsql://`)
    - `TURSO_AUTH_TOKEN` (Create token)
-
-La primera request a la app crea tablas y carga el seed.
-
-## 2. Subir el repo y Vercel
-
-En PowerShell el comando es `npx vercel`, no `vercel`. Si dice que no hay credenciales:
+3. **Vercel** — en PowerShell: `npx vercel` (no `vercel` a secas).
 
 ```bash
 npx vercel login
 npx vercel
 ```
 
-Login gratis, proyecto Hobby, **no** hace falta tarjeta para el plan hobby típico.
+O https://vercel.com → Add New → importar el repo de GitHub. Hobby, sin tarjeta para el plan típico.
 
-O desde https://vercel.com → Add New → importá el GitHub.
-
-En **Settings → Environment Variables** (Production y Preview):
+4. **Settings → Environment Variables** (Production y Preview):
 
 ```
 TURSO_DATABASE_URL=libsql://....
 TURSO_AUTH_TOKEN=...
+GROQ_API_KEY=gsk_...
 ```
 
-Redeploy. La URL queda `https://….vercel.app`.
+5. Redeploy. URL: `https://….vercel.app`.
+6. Primera request: crea tablas y carga el seed. Abrí **Movimientos** y deberías ver saldos.
 
-## Parseo
+## Interpretar texto (Groq)
 
-Reglas locales en `lib/parse.ts`. Sin API paga.
+Guía completa: [GROQ.md](GROQ.md). Resumen: cuenta en console.groq.com → `GROQ_API_KEY` en `.env.local` y en Vercel → reiniciar `npm run dev` / Redeploy.
+
+## Local (solo desarrollo)
+
+```bash
+npm install
+npm run dev
+```
+
+Comprobación del motor: `npm run verify`.  
+Formato de proforma: `npx tsx scripts/verify-proforma.ts`.
+
+Reglas locales en `lib/parse.ts` si no hay Groq. Con `GROQ_API_KEY`, Llama interpreta dictado con errores.

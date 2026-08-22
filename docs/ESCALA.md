@@ -12,8 +12,8 @@ El MVP no implementa esto. Cada ítem indica el archivo, no un rediseño.
 | Kg como unidad de piso | `applyMovement` valida `bags`; agregar `unit` o convertir con `kg_per_bag` en el mismo archivo. |
 | Importar el .xls histórico | Script one-shot que inserte filas en `movements` y recorra `applyMovement`. No parsear Excel en el request. |
 | Usuarios / quién cargó | Columna `user` en `movements`. Auth después; el motor no depende de ella. |
-| STT aparte de Web Speech | El micrófono solo llena el textarea (`app/page.tsx`). Cualquier STT que devuelva texto entra al mismo `POST /api/parse`. |
-| Otro parser / LLM gratis | Sustituir el cuerpo de `parseMovement` en `lib/parse.ts`. `applyMovement` no se toca. |
+| STT | Micrófono continuo en `app/page.tsx` (pestaña Movimientos). Wispr Flow del evento pega texto al campo. |
+| Groq (LLM gratis) | `GROQ_API_KEY` + `parseWithGroq` en `lib/parse.ts`. Sin clave, reglas + fuzzy. |
 | Postgres / otra DB | Conservar `applyMovement`. El adaptador está en `lib/db.ts` (hoy: archivo local o Turso). |
 
 Atajos actuales (`ponytail:` en código): parser por reglas incompleto frente a remitos narrados; saldo denormalizado en `stock` (el historial alcanza para reconstruir si hace falta un recálculo).

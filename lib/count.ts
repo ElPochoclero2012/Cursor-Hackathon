@@ -1,5 +1,6 @@
 import { getSql } from "./db";
 import { explainGap, type MoveHint } from "./hypothesis";
+import { parseCount } from "./parse";
 import { listMovements, StockError } from "./stock";
 
 async function declaredBags(lot: string, locationId: string) {
@@ -27,6 +28,12 @@ export async function availableForLoad(lot: string, locationId: string) {
   const counted = await lastVerified(lot, locationId);
   if (counted === null) return declared;
   return Math.min(declared, counted);
+}
+
+export async function recordCountFromText(text: string, catalog: Parameters<typeof parseCount>[1]) {
+  const parsed = parseCount(text, catalog);
+  if ("error" in parsed) throw new StockError(parsed.error);
+  return recordCount({ lot: parsed.lote, locationId: parsed.origen, counted: parsed.bolsas });
 }
 
 export async function recordCount(input: { lot: string; locationId: string; counted: number }) {
