@@ -60,6 +60,16 @@ assert.ok(row);
 assert.equal(row.byLocation.dospanca, 320);
 assert.equal(row.byLocation.galpon, 170);
 
+const { slicesFromStock } = await import("../lib/pie.ts");
+const bags = stock.rows.reduce((s, r) => s + r.total, 0);
+const bodega = slicesFromStock(stock.rows, stock.locations, "bodega");
+assert.equal(bodega.reduce((s, x) => s + x.bags, 0), bags);
+assert.equal(bodega.length, 4);
+const lote = slicesFromStock(stock.rows, stock.locations, "lote");
+assert.equal(lote.length, 8);
+assert.equal(lote.at(-1)?.label, "Otros");
+assert.equal(lote.reduce((s, x) => s + x.bags, 0), bags);
+
 const { recordCount } = await import("../lib/count.ts");
 const { explainGap } = await import("../lib/hypothesis.ts");
 const gap = explainGap({

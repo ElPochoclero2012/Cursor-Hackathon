@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { pieFill, slicesFromStock, type PieMode } from "@/lib/pie";
 
 type Tab = "movimientos" | "control" | "exportacion";
 
@@ -471,6 +472,7 @@ export default function Page() {
                 <div className="filter">
                   <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filtrar por variedad o lote" />
                 </div>
+                <StockPies stock={stock} rows={rows} />
                 <StockTable stock={stock} rows={rows} />
               </section>
             </div>
@@ -536,6 +538,7 @@ export default function Page() {
 
             <section className="card">
               <h2>Stock</h2>
+              <StockPies stock={stock} rows={rows} />
               <StockTable stock={stock} rows={rows} />
             </section>
 
@@ -731,6 +734,69 @@ function ProformaCard({ doc }: { doc: ProformaDoc }) {
       </div>
       <p className="proforma-foot">Campos cruzados con trazabilidad del lote. Completar DTV / SENASA en destino.</p>
     </section>
+  );
+}
+
+const PIE_MODES: { id: PieMode; label: string }[] = [
+  { id: "bodega", label: "Por bodega" },
+  { id: "variedad", label: "Por variedad" },
+  { id: "lote", label: "Por lote" },
+];
+
+function StockPies({
+  stock,
+  rows,
+}: {
+  stock: StockPayload | null;
+  rows: StockPayload["rows"];
+}) {
+  const [mode, setMode] = useState<PieMode | null>(null);
+  const slices = useMemo(() => {
+    if (!stock || !mode) return [];
+    return slicesFromStock(rows, stock.locations, mode);
+  }, [stock, rows, mode]);
+  const total = slices.reduce((s, x) => s + x.bags, 0);
+
+  return (
+    <div className="pie-block">
+      <div className="pie-toggles" role="group" aria-label="Gráficos de stock">
+        {PIE_MODES.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            className={`pie-toggle${mode === m.id ? " on" : ""}`}
+            aria-pressed={mode === m.id}
+            onClick={() => setMode((cur) => (cur === m.id ? null : m.id))}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+      {mode &&
+        (total === 0 ? (
+          <p className="empty">No hay bolsas para graficar con este filtro.</p>
+        ) : (
+          <div className="pie-panel">
+            <div
+              className="pie-disc"
+              role="img"
+              aria-label={`Distribución de bolsas ${mode}`}
+              style={{ ["--pie-fill" as string]: pieFill(slices) }}
+            />
+            <ul className="pie-legend">
+              {slices.map((sl) => (
+                <li key={sl.label}>
+                  <span className="pie-swatch" />
+                  <span>{sl.label}</span>
+                  <span className="num">
+                    {sl.bags} · {Math.round((sl.bags / total) * 100)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+    </div>
   );
 }
 
